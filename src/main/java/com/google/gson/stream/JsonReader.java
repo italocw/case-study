@@ -1284,8 +1284,7 @@ public class JsonReader implements Closeable {
             pathNames = Arrays.copyOf(pathNames, newLength);
         }
 
-        nestingStack.setNewTop(newTop);
-        nestingStack.moveForward();
+        nestingStack.push(newTop);
     }
 
     /**

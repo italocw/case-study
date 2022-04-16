@@ -4,7 +4,7 @@ import java.util.Arrays;
 
 public class Stack {
     private int[] jsonScope = new int[32];
-    private int occupancy =0;
+    private int occupancy = 0;
 
     public Stack() {
         jsonScope[occupancy] = JsonScope.EMPTY_DOCUMENT;
@@ -27,10 +27,6 @@ public class Stack {
         occupancy--;
     }
 
-    public void moveForward() {
-        occupancy++;
-    }
-
     public boolean isFull() {
         boolean isFull = occupancy == jsonScope.length;
         return isFull;
@@ -50,7 +46,8 @@ public class Stack {
         return jsonScope[index];
     }
 
-    public void setNewTop(int scope) {
-        jsonScope[occupancy] =scope;
+    public void push(int scope) {
+        jsonScope[occupancy] = scope;
+        occupancy++;
     }
 }
