@@ -456,12 +456,9 @@ public class JsonReader implements Closeable {
         if (peekStack == JsonScope.EMPTY_ARRAY) {
             nestingStack.setCurrentScope(JsonScope.NONEMPTY_ARRAY);
         } else if (peekStack == JsonScope.NONEMPTY_ARRAY) {
-            // Look for a comma before the next element.
             tokenWasPeeked = tryPeekTokenWhenNonEmptyArray();
-
         } else if (peekStack == JsonScope.EMPTY_OBJECT || peekStack == JsonScope.NONEMPTY_OBJECT) {
             nestingStack.setCurrentScope(JsonScope.DANGLING_NAME);
-            // Look for a comma before the next element.
             if (peekStack == JsonScope.NONEMPTY_OBJECT) {
                 tokenWasPeeked = tryPeekTokenWhenNonEmptyObject();
             }
@@ -488,27 +485,21 @@ public class JsonReader implements Closeable {
             tokenWasPeeked = tryPeekToken(peekStack);
 
             if (!tokenWasPeeked) {
-                int result = peekKeyword();
-                if (result != PEEKED_NONE) {
-                    return result;
-                }
-
-                result = peekNumber();
-                if (result != PEEKED_NONE) {
-                    return result;
-                }
-
-                if (!isLiteral(buffer[pos])) {
-                    throw syntaxError("Expected value");
-                }
-
-                checkLenient();
-                return peeked = PEEKED_UNQUOTED;
+                tokenWasPeeked = peekKeyword() != PEEKED_NONE;
             }
-            return peeked;
-        } else {
-            return peeked;
+            if (!tokenWasPeeked) {
+                tokenWasPeeked = peekNumber() != PEEKED_NONE;
+
+                if (!tokenWasPeeked) {
+                    if (!isLiteral(buffer[pos])) {
+                        throw syntaxError("Expected value");
+                    }
+                    checkLenient();
+                    peeked = PEEKED_UNQUOTED;
+                }
+            }
         }
+        return peeked;
     }
 
     private boolean tryPeekToken(int peekStack) throws IOException {
