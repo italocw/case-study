@@ -67,8 +67,8 @@ public class Stack {
         occupancy++;
     }
 
-    public void setLastPathIndex(int value) {
-        pathIndices[occupancy - 1] = value;
+    public void moveToNextArrayBegin() {
+        pathIndices[occupancy - 1] = 0;
     }
 
     public void increaseLastPathIndex() {

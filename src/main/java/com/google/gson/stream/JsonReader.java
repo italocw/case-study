@@ -23,7 +23,6 @@ import java.io.Closeable;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.Reader;
-import java.util.Arrays;
 
 /**
  * Reads a JSON (<a href="http://www.ietf.org/rfc/rfc7159.txt">RFC 7159</a>)
@@ -340,7 +339,7 @@ public class JsonReader implements Closeable {
         }
         if (p == PEEKED_BEGIN_ARRAY) {
             push(JsonScope.EMPTY_ARRAY);
-            nestingStack.setLastPathIndex(0);
+            nestingStack.moveToNextArrayBegin();
             peeked = PEEKED_NONE;
         } else {
             throw new IllegalStateException("Expected BEGIN_ARRAY but was " + peek() + locationString());
@@ -452,98 +451,75 @@ public class JsonReader implements Closeable {
     }
 
     int doPeek() throws IOException {
+        boolean tokenWasPeeked = false;
         int peekStack = nestingStack.getCurrentScope();
         if (peekStack == JsonScope.EMPTY_ARRAY) {
             nestingStack.setCurrentScope(JsonScope.NONEMPTY_ARRAY);
         } else if (peekStack == JsonScope.NONEMPTY_ARRAY) {
             // Look for a comma before the next element.
-            int c = nextNonWhitespace(true);
-            switch (c) {
-                case ']':
-                    return peeked = PEEKED_END_ARRAY;
-                case ';':
-                    checkLenient(); // fall-through
-                case ',':
-                    break;
-                default:
-                    throw syntaxError("Unterminated array");
-            }
+            tokenWasPeeked = tryPeekTokenWhenNonEmptyArray();
+
         } else if (peekStack == JsonScope.EMPTY_OBJECT || peekStack == JsonScope.NONEMPTY_OBJECT) {
             nestingStack.setCurrentScope(JsonScope.DANGLING_NAME);
             // Look for a comma before the next element.
             if (peekStack == JsonScope.NONEMPTY_OBJECT) {
-                int c = nextNonWhitespace(true);
-                switch (c) {
-                    case '}':
-                        return peeked = PEEKED_END_OBJECT;
-                    case ';':
-                        checkLenient(); // fall-through
-                    case ',':
-                        break;
-                    default:
-                        throw syntaxError("Unterminated object");
-                }
+                tokenWasPeeked = tryPeekTokenWhenNonEmptyObject();
             }
-            int c = nextNonWhitespace(true);
-            switch (c) {
-                case '"':
-                    return peeked = PEEKED_DOUBLE_QUOTED_NAME;
-                case '\'':
-                    checkLenient();
-                    return peeked = PEEKED_SINGLE_QUOTED_NAME;
-                case '}':
-                    if (peekStack != JsonScope.NONEMPTY_OBJECT) {
-                        return peeked = PEEKED_END_OBJECT;
-                    } else {
-                        throw syntaxError("Expected name");
-                    }
-                default:
-                    checkLenient();
-                    pos--; // Don't consume the first character in an unquoted string.
-                    if (isLiteral((char) c)) {
-                        return peeked = PEEKED_UNQUOTED_NAME;
-                    } else {
-                        throw syntaxError("Expected name");
-                    }
+            if (!tokenWasPeeked) {
+                peekTokenWhenObject(peekStack);
+                tokenWasPeeked = true;
             }
+
         } else if (peekStack == JsonScope.DANGLING_NAME) {
             nestingStack.setCurrentScope(JsonScope.NONEMPTY_OBJECT);
             // Look for a colon before the value.
-            int c = nextNonWhitespace(true);
-            switch (c) {
-                case ':':
-                    break;
-                case '=':
-                    checkLenient();
-                    if ((pos < limit || fillBuffer(1)) && buffer[pos] == '>') {
-                        pos++;
-                    }
-                    break;
-                default:
-                    throw syntaxError("Expected ':'");
-            }
+            lookForColonBeforeValue();
         } else if (peekStack == JsonScope.EMPTY_DOCUMENT) {
             if (lenient) {
                 consumeNonExecutePrefix();
             }
             nestingStack.setCurrentScope(JsonScope.NONEMPTY_DOCUMENT);
         } else if (peekStack == JsonScope.NONEMPTY_DOCUMENT) {
-            int c = nextNonWhitespace(false);
-            if (c == -1) {
-                return peeked = PEEKED_EOF;
-            } else {
-                checkLenient();
-                pos--;
-            }
+            tokenWasPeeked = tryPeekTokenWhenNonEmptyDocument();
         } else if (peekStack == JsonScope.CLOSED) {
             throw new IllegalStateException("JsonReader is closed");
         }
+        if (!tokenWasPeeked) {
+            tokenWasPeeked = tryPeekToken(peekStack);
 
+            if (!tokenWasPeeked) {
+                int result = peekKeyword();
+                if (result != PEEKED_NONE) {
+                    return result;
+                }
+
+                result = peekNumber();
+                if (result != PEEKED_NONE) {
+                    return result;
+                }
+
+                if (!isLiteral(buffer[pos])) {
+                    throw syntaxError("Expected value");
+                }
+
+                checkLenient();
+                return peeked = PEEKED_UNQUOTED;
+            }
+            return peeked;
+        } else {
+            return peeked;
+        }
+    }
+
+    private boolean tryPeekToken(int peekStack) throws IOException {
+        boolean tokenWasPeeked = false;
         int c = nextNonWhitespace(true);
         switch (c) {
             case ']':
                 if (peekStack == JsonScope.EMPTY_ARRAY) {
-                    return peeked = PEEKED_END_ARRAY;
+                    peeked = PEEKED_END_ARRAY;
+                    tokenWasPeeked = true;
+                    break;
                 }
                 // fall-through to handle ",]"
             case ';':
@@ -552,39 +528,134 @@ public class JsonReader implements Closeable {
                 if (peekStack == JsonScope.EMPTY_ARRAY || peekStack == JsonScope.NONEMPTY_ARRAY) {
                     checkLenient();
                     pos--;
-                    return peeked = PEEKED_NULL;
+                    peeked = PEEKED_NULL;
+                    tokenWasPeeked = true;
+                    break;
                 } else {
                     throw syntaxError("Unexpected value");
                 }
             case '\'':
                 checkLenient();
-                return peeked = PEEKED_SINGLE_QUOTED;
+                peeked = PEEKED_SINGLE_QUOTED;
+                tokenWasPeeked = true;
+                break;
+
             case '"':
-                return peeked = PEEKED_DOUBLE_QUOTED;
+                peeked = PEEKED_DOUBLE_QUOTED;
+                tokenWasPeeked = true;
+                break;
             case '[':
-                return peeked = PEEKED_BEGIN_ARRAY;
+                peeked = PEEKED_BEGIN_ARRAY;
+                tokenWasPeeked = true;
+                break;
             case '{':
-                return peeked = PEEKED_BEGIN_OBJECT;
+                peeked = PEEKED_BEGIN_OBJECT;
+                tokenWasPeeked = true;
+                break;
             default:
                 pos--; // Don't consume the first character in a literal value.
         }
+        return tokenWasPeeked;
+    }
 
-        int result = peekKeyword();
-        if (result != PEEKED_NONE) {
-            return result;
+    private boolean tryPeekTokenWhenNonEmptyDocument() throws IOException {
+        boolean tokenWasPeeked = false;
+        int character = nextNonWhitespace(false);
+        if (character == -1) {
+            peeked = PEEKED_EOF;
+            tokenWasPeeked = true;
+        } else {
+            checkLenient();
+            pos--;
+        }
+        return tokenWasPeeked;
+    }
+
+    private void lookForColonBeforeValue() throws IOException {
+        int character = nextNonWhitespace(true);
+        switch (character) {
+            case ':':
+                break;
+            case '=':
+                checkLenient();
+                if ((pos < limit || fillBuffer(1)) && buffer[pos] == '>') {
+                    pos++;
+                }
+                break;
+            default:
+                throw syntaxError("Expected ':'");
+        }
+    }
+
+
+    private void peekTokenWhenObject(int peekStack) throws IOException {
+        int character = nextNonWhitespace(true);
+        switch (character) {
+            case '"':
+                peeked = PEEKED_DOUBLE_QUOTED_NAME;
+                break;
+            case '\'':
+                checkLenient();
+                peeked = PEEKED_SINGLE_QUOTED_NAME;
+                break;
+            case '}':
+                if (peekStack != JsonScope.NONEMPTY_OBJECT) {
+                    peeked = PEEKED_END_OBJECT;
+                    break;
+                } else {
+                    throw syntaxError("Expected name");
+                }
+
+            default:
+                checkLenient();
+                pos--; // Don't consume the first character in an unquoted string.
+                if (isLiteral((char) character)) {
+                    peeked = PEEKED_UNQUOTED_NAME;
+                    break;
+                } else {
+                    throw syntaxError("Expected name");
+                }
         }
 
-        result = peekNumber();
-        if (result != PEEKED_NONE) {
-            return result;
-        }
+    }
 
-        if (!isLiteral(buffer[pos])) {
-            throw syntaxError("Expected value");
+    private boolean tryPeekTokenWhenNonEmptyObject() throws IOException {
+        boolean tokenWasPeeked = false;
+        // Look for a comma before the next element.
+        int character = nextNonWhitespace(true);
+        switch (character) {
+            case '}':
+                peeked = PEEKED_END_OBJECT;
+                tokenWasPeeked = true;
+                break;
+            case ';':
+                checkLenient(); // fall-through
+            case ',':
+                break;
+            default:
+                throw syntaxError("Unterminated object");
         }
+        return tokenWasPeeked;
+    }
 
-        checkLenient();
-        return peeked = PEEKED_UNQUOTED;
+
+    private boolean tryPeekTokenWhenNonEmptyArray() throws IOException {
+        // Look for a comma before the next element.
+        boolean tokenWasPeeked = false;
+        int character = nextNonWhitespace(true);
+        switch (character) {
+            case ']':
+                peeked = PEEKED_END_ARRAY;
+                tokenWasPeeked = true;
+                break;
+            case ';':
+                checkLenient(); // fall-through
+            case ',':
+                break;
+            default:
+                throw syntaxError("Unterminated array");
+        }
+        return tokenWasPeeked;
     }
 
     private int peekKeyword() throws IOException {
