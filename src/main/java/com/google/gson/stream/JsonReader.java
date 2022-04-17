@@ -279,17 +279,6 @@ public class JsonReader implements Closeable {
     private Stack nestingStack = new Stack();
 
 
-    /*
-     * The path members. It corresponds directly to stack: At indices where the
-     * stack contains an object (EMPTY_OBJECT, DANGLING_NAME or NONEMPTY_OBJECT),
-     * pathNames contains the name at this scope. Where it contains an array
-     * (EMPTY_ARRAY, NONEMPTY_ARRAY) pathIndices contains the current index in
-     * that array. Otherwise the value is undefined, and we take advantage of that
-     * by incrementing pathIndices when doing so isn't useful.
-     */
-    private String[] pathNames = new String[32];
-    private int[] pathIndices = new int[32];
-
     /**
      * Creates a new instance that reads a JSON-encoded stream from {@code in}.
      */
@@ -351,7 +340,7 @@ public class JsonReader implements Closeable {
         }
         if (p == PEEKED_BEGIN_ARRAY) {
             push(JsonScope.EMPTY_ARRAY);
-            pathIndices[nestingStack.getOccupancy() - 1] = 0;
+            nestingStack.setLastPathIndex(0);
             peeked = PEEKED_NONE;
         } else {
             throw new IllegalStateException("Expected BEGIN_ARRAY but was " + peek() + locationString());
@@ -368,8 +357,7 @@ public class JsonReader implements Closeable {
             p = doPeek();
         }
         if (p == PEEKED_END_ARRAY) {
-            nestingStack.moveBackward();
-            pathIndices[nestingStack.getOccupancy() - 1]++;
+            nestingStack.notifyArrayEnd();
             peeked = PEEKED_NONE;
         } else {
             throw new IllegalStateException("Expected END_ARRAY but was " + peek() + locationString());
@@ -403,10 +391,7 @@ public class JsonReader implements Closeable {
             p = doPeek();
         }
         if (p == PEEKED_END_OBJECT) {
-            nestingStack.moveBackward();
-            int nestingStackSize = nestingStack.getOccupancy();
-            pathNames[nestingStackSize] = null; // Free the last path name so that it can be garbage collected!
-            pathIndices[nestingStackSize - 1]++;
+            nestingStack.notifyObjectEnd();
             peeked = PEEKED_NONE;
         } else {
             throw new IllegalStateException("Expected END_OBJECT but was " + peek() + locationString());
@@ -797,7 +782,7 @@ public class JsonReader implements Closeable {
             throw new IllegalStateException("Expected a name but was " + peek() + locationString());
         }
         peeked = PEEKED_NONE;
-        pathNames[nestingStack.getOccupancy() - 1] = result;
+        nestingStack.setLastPathName(result);
         return result;
     }
 
@@ -833,7 +818,7 @@ public class JsonReader implements Closeable {
             throw new IllegalStateException("Expected a string but was " + peek() + locationString());
         }
         peeked = PEEKED_NONE;
-        pathIndices[nestingStack.getOccupancy() - 1]++;
+        nestingStack.increaseLastPathIndex();
         return result;
     }
 
@@ -846,18 +831,17 @@ public class JsonReader implements Closeable {
      */
     public boolean nextBoolean() throws IOException {
         int p = peeked;
-        int stackSize = nestingStack.getOccupancy();
 
         if (p == PEEKED_NONE) {
             p = doPeek();
         }
         if (p == PEEKED_TRUE) {
             peeked = PEEKED_NONE;
-            pathIndices[stackSize - 1]++;
+            nestingStack.increaseLastPathIndex();
             return true;
         } else if (p == PEEKED_FALSE) {
             peeked = PEEKED_NONE;
-            pathIndices[stackSize - 1]++;
+            nestingStack.increaseLastPathIndex();
             return false;
         }
         throw new IllegalStateException("Expected a boolean but was " + peek() + locationString());
@@ -877,7 +861,7 @@ public class JsonReader implements Closeable {
         }
         if (p == PEEKED_NULL) {
             peeked = PEEKED_NONE;
-            pathIndices[nestingStack.getOccupancy() - 1]++;
+            nestingStack.increaseLastPathIndex();
         } else {
             throw new IllegalStateException("Expected null but was " + peek() + locationString());
         }
@@ -902,7 +886,7 @@ public class JsonReader implements Closeable {
 
         if (p == PEEKED_LONG) {
             peeked = PEEKED_NONE;
-            pathIndices[stackSize - 1]++;
+            nestingStack.increaseLastPathIndex();
             return (double) peekedLong;
         }
 
@@ -925,7 +909,7 @@ public class JsonReader implements Closeable {
         }
         peekedString = null;
         peeked = PEEKED_NONE;
-        pathIndices[stackSize - 1]++;
+        nestingStack.increaseLastPathIndex();
         return result;
     }
 
@@ -949,7 +933,7 @@ public class JsonReader implements Closeable {
 
         if (p == PEEKED_LONG) {
             peeked = PEEKED_NONE;
-            pathIndices[stackSize - 1]++;
+            nestingStack.increaseLastPathIndex();
             return peekedLong;
         }
 
@@ -965,7 +949,7 @@ public class JsonReader implements Closeable {
             try {
                 long result = Long.parseLong(peekedString);
                 peeked = PEEKED_NONE;
-                pathIndices[stackSize - 1]++;
+                nestingStack.increaseLastPathIndex();
                 return result;
             } catch (NumberFormatException ignored) {
                 // Fall back to parse as a double below.
@@ -982,7 +966,7 @@ public class JsonReader implements Closeable {
         }
         peekedString = null;
         peeked = PEEKED_NONE;
-        pathIndices[stackSize - 1]++;
+        nestingStack.increaseLastPathIndex();
         return result;
     }
 
@@ -1187,7 +1171,7 @@ public class JsonReader implements Closeable {
                 throw new NumberFormatException("Expected an int but was " + peekedLong + locationString());
             }
             peeked = PEEKED_NONE;
-            pathIndices[stackSize - 1]++;
+            nestingStack.increaseLastPathIndex();
             return result;
         }
 
@@ -1203,7 +1187,7 @@ public class JsonReader implements Closeable {
             try {
                 result = Integer.parseInt(peekedString);
                 peeked = PEEKED_NONE;
-                pathIndices[stackSize - 1]++;
+                nestingStack.increaseLastPathIndex();
                 return result;
             } catch (NumberFormatException ignored) {
                 // Fall back to parse as a double below.
@@ -1220,7 +1204,7 @@ public class JsonReader implements Closeable {
         }
         peekedString = null;
         peeked = PEEKED_NONE;
-        pathIndices[stackSize - 1]++;
+        nestingStack.increaseLastPathIndex();
         return result;
     }
 
@@ -1272,16 +1256,13 @@ public class JsonReader implements Closeable {
             peeked = PEEKED_NONE;
         } while (count != 0);
 
-        pathIndices[stackSize - 1]++;
-        pathNames[stackSize - 1] = "null";
+        nestingStack.increaseLastPathIndex();
+        nestingStack.setLastPathName("null");
     }
 
     private void push(int newTop) {
         if (nestingStack.isFull()) {
             nestingStack.duplicate();
-            int newLength = nestingStack.getOccupancy() * 2;
-            pathIndices = Arrays.copyOf(pathIndices, newLength);
-            pathNames = Arrays.copyOf(pathNames, newLength);
         }
 
         nestingStack.push(newTop);
@@ -1480,7 +1461,7 @@ public class JsonReader implements Closeable {
             switch (nestingStack.getScopeFromIndex(i)) {
                 case JsonScope.EMPTY_ARRAY:
                 case JsonScope.NONEMPTY_ARRAY:
-                    int pathIndex = pathIndices[i];
+                    int pathIndex = nestingStack.getPathIndex(i);
                     // If index is last path element it points to next array element; have to decrement
                     if (usePreviousPath && pathIndex > 0 && i == stackSize - 1) {
                         pathIndex--;
@@ -1491,8 +1472,9 @@ public class JsonReader implements Closeable {
                 case JsonScope.DANGLING_NAME:
                 case JsonScope.NONEMPTY_OBJECT:
                     result.append('.');
-                    if (pathNames[i] != null) {
-                        result.append(pathNames[i]);
+                    String pathName = nestingStack.getPathName(i);
+                    if (pathName != null) {
+                        result.append(pathName);
                     }
                     break;
                 case JsonScope.NONEMPTY_DOCUMENT:
