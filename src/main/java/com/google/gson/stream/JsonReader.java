@@ -250,7 +250,7 @@ public class JsonReader implements Closeable {
     private int lineNumber = 0;
     private int lineStart = 0;
 
-    int peeked = PEEKED_NONE;
+    Peeked peeked = new Peeked();
 
     /**
      * A peeked value that was composed entirely of digits with an optional
@@ -333,14 +333,13 @@ public class JsonReader implements Closeable {
      * beginning of a new array.
      */
     public void beginArray() throws IOException {
-        int p = peeked;
-        if (p == PEEKED_NONE) {
-            p = doPeek();
+        if (peeked.getType() == PEEKED_NONE) {
+            peeked.setType(doPeek());
         }
-        if (p == PEEKED_BEGIN_ARRAY) {
+        if (peeked.getType() == PEEKED_BEGIN_ARRAY) {
             push(JsonScope.EMPTY_ARRAY);
             nestingStack.moveToNextArrayBegin();
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
         } else {
             throw new IllegalStateException("Expected BEGIN_ARRAY but was " + peek() + locationString());
         }
@@ -351,13 +350,13 @@ public class JsonReader implements Closeable {
      * end of the current array.
      */
     public void endArray() throws IOException {
-        int p = peeked;
+        int p = peeked.getType();
         if (p == PEEKED_NONE) {
             p = doPeek();
         }
         if (p == PEEKED_END_ARRAY) {
             nestingStack.notifyArrayEnd();
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
         } else {
             throw new IllegalStateException("Expected END_ARRAY but was " + peek() + locationString());
         }
@@ -368,13 +367,12 @@ public class JsonReader implements Closeable {
      * beginning of a new object.
      */
     public void beginObject() throws IOException {
-        int p = peeked;
-        if (p == PEEKED_NONE) {
-            p = doPeek();
+        if (peeked.getType() == PEEKED_NONE) {
+            peeked.setType(doPeek());
         }
-        if (p == PEEKED_BEGIN_OBJECT) {
+        if (peeked.getType() == PEEKED_BEGIN_OBJECT) {
             push(JsonScope.EMPTY_OBJECT);
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
         } else {
             throw new IllegalStateException("Expected BEGIN_OBJECT but was " + peek() + locationString());
         }
@@ -385,13 +383,12 @@ public class JsonReader implements Closeable {
      * end of the current object.
      */
     public void endObject() throws IOException {
-        int p = peeked;
-        if (p == PEEKED_NONE) {
-            p = doPeek();
+        if (peeked.getType() == PEEKED_NONE) {
+            peeked.setType(doPeek());
         }
-        if (p == PEEKED_END_OBJECT) {
+        if (peeked.getType() == PEEKED_END_OBJECT) {
             nestingStack.notifyObjectEnd();
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
         } else {
             throw new IllegalStateException("Expected END_OBJECT but was " + peek() + locationString());
         }
@@ -401,53 +398,21 @@ public class JsonReader implements Closeable {
      * Returns true if the current array or object has another element.
      */
     public boolean hasNext() throws IOException {
-        int p = peeked;
-        if (p == PEEKED_NONE) {
-            p = doPeek();
+        if (peeked.getType() == PEEKED_NONE) {
+            peeked.setType(doPeek());
         }
-        return p != PEEKED_END_OBJECT && p != PEEKED_END_ARRAY && p != PEEKED_EOF;
+        return peeked.hasNext();
     }
 
     /**
      * Returns the type of the next token without consuming it.
      */
     public JsonToken peek() throws IOException {
-        int p = peeked;
-        if (p == PEEKED_NONE) {
-            p = doPeek();
+        if (peeked.getType() == PEEKED_NONE) {
+            peeked.setType(doPeek());
         }
 
-        switch (p) {
-            case PEEKED_BEGIN_OBJECT:
-                return JsonToken.BEGIN_OBJECT;
-            case PEEKED_END_OBJECT:
-                return JsonToken.END_OBJECT;
-            case PEEKED_BEGIN_ARRAY:
-                return JsonToken.BEGIN_ARRAY;
-            case PEEKED_END_ARRAY:
-                return JsonToken.END_ARRAY;
-            case PEEKED_SINGLE_QUOTED_NAME:
-            case PEEKED_DOUBLE_QUOTED_NAME:
-            case PEEKED_UNQUOTED_NAME:
-                return JsonToken.NAME;
-            case PEEKED_TRUE:
-            case PEEKED_FALSE:
-                return JsonToken.BOOLEAN;
-            case PEEKED_NULL:
-                return JsonToken.NULL;
-            case PEEKED_SINGLE_QUOTED:
-            case PEEKED_DOUBLE_QUOTED:
-            case PEEKED_UNQUOTED:
-            case PEEKED_BUFFERED:
-                return JsonToken.STRING;
-            case PEEKED_LONG:
-            case PEEKED_NUMBER:
-                return JsonToken.NUMBER;
-            case PEEKED_EOF:
-                return JsonToken.END_DOCUMENT;
-            default:
-                throw new AssertionError();
-        }
+        return peeked.toJsonToken();
     }
 
     int doPeek() throws IOException {
@@ -495,11 +460,11 @@ public class JsonReader implements Closeable {
                         throw syntaxError("Expected value");
                     }
                     checkLenient();
-                    peeked = PEEKED_UNQUOTED;
+                    peeked.setType(PEEKED_UNQUOTED);
                 }
             }
         }
-        return peeked;
+        return peeked.getType();
     }
 
     private boolean tryPeekToken(int peekStack) throws IOException {
@@ -508,7 +473,7 @@ public class JsonReader implements Closeable {
         switch (c) {
             case ']':
                 if (peekStack == JsonScope.EMPTY_ARRAY) {
-                    peeked = PEEKED_END_ARRAY;
+                    peeked.setType(PEEKED_END_ARRAY);
                     tokenWasPeeked = true;
                     break;
                 }
@@ -519,7 +484,7 @@ public class JsonReader implements Closeable {
                 if (peekStack == JsonScope.EMPTY_ARRAY || peekStack == JsonScope.NONEMPTY_ARRAY) {
                     checkLenient();
                     pos--;
-                    peeked = PEEKED_NULL;
+                    peeked.setType(PEEKED_NULL);
                     tokenWasPeeked = true;
                     break;
                 } else {
@@ -527,20 +492,19 @@ public class JsonReader implements Closeable {
                 }
             case '\'':
                 checkLenient();
-                peeked = PEEKED_SINGLE_QUOTED;
+                peeked.setType(PEEKED_SINGLE_QUOTED);
                 tokenWasPeeked = true;
                 break;
-
             case '"':
-                peeked = PEEKED_DOUBLE_QUOTED;
+                peeked.setType(PEEKED_DOUBLE_QUOTED);
                 tokenWasPeeked = true;
                 break;
             case '[':
-                peeked = PEEKED_BEGIN_ARRAY;
+                peeked.setType(PEEKED_BEGIN_ARRAY);
                 tokenWasPeeked = true;
                 break;
             case '{':
-                peeked = PEEKED_BEGIN_OBJECT;
+                peeked.setType(PEEKED_BEGIN_OBJECT);
                 tokenWasPeeked = true;
                 break;
             default:
@@ -553,7 +517,7 @@ public class JsonReader implements Closeable {
         boolean tokenWasPeeked = false;
         int character = nextNonWhitespace(false);
         if (character == -1) {
-            peeked = PEEKED_EOF;
+            peeked.setType(PEEKED_EOF);
             tokenWasPeeked = true;
         } else {
             checkLenient();
@@ -583,15 +547,15 @@ public class JsonReader implements Closeable {
         int character = nextNonWhitespace(true);
         switch (character) {
             case '"':
-                peeked = PEEKED_DOUBLE_QUOTED_NAME;
+                peeked.setType(PEEKED_DOUBLE_QUOTED_NAME);
                 break;
             case '\'':
                 checkLenient();
-                peeked = PEEKED_SINGLE_QUOTED_NAME;
+                peeked.setType(PEEKED_SINGLE_QUOTED_NAME);
                 break;
             case '}':
                 if (peekStack != JsonScope.NONEMPTY_OBJECT) {
-                    peeked = PEEKED_END_OBJECT;
+                    peeked.setType(PEEKED_END_OBJECT);
                     break;
                 } else {
                     throw syntaxError("Expected name");
@@ -601,7 +565,7 @@ public class JsonReader implements Closeable {
                 checkLenient();
                 pos--; // Don't consume the first character in an unquoted string.
                 if (isLiteral((char) character)) {
-                    peeked = PEEKED_UNQUOTED_NAME;
+                    peeked.setType(PEEKED_UNQUOTED_NAME);
                     break;
                 } else {
                     throw syntaxError("Expected name");
@@ -616,7 +580,7 @@ public class JsonReader implements Closeable {
         int character = nextNonWhitespace(true);
         switch (character) {
             case '}':
-                peeked = PEEKED_END_OBJECT;
+                peeked.setType(PEEKED_END_OBJECT);
                 tokenWasPeeked = true;
                 break;
             case ';':
@@ -636,7 +600,7 @@ public class JsonReader implements Closeable {
         int character = nextNonWhitespace(true);
         switch (character) {
             case ']':
-                peeked = PEEKED_END_ARRAY;
+                peeked.setType(PEEKED_END_ARRAY);
                 tokenWasPeeked = true;
                 break;
             case ';':
@@ -690,7 +654,9 @@ public class JsonReader implements Closeable {
 
         // We've found the keyword followed either by EOF or by a non-literal character.
         pos += length;
-        return peeked = peeking;
+        peeked.setType(peeking);
+
+        return peeked.getType();
     }
 
     private int peekNumber() throws IOException {
@@ -786,11 +752,13 @@ public class JsonReader implements Closeable {
         if (last == NUMBER_CHAR_DIGIT && fitsInLong && (value != Long.MIN_VALUE || negative) && (value != 0 || false == negative)) {
             peekedLong = negative ? value : -value;
             pos += i;
-            return peeked = PEEKED_LONG;
+            peeked.setType(PEEKED_LONG);
+            return peeked.getType();
         } else if (last == NUMBER_CHAR_DIGIT || last == NUMBER_CHAR_FRACTION_DIGIT
                 || last == NUMBER_CHAR_EXP_DIGIT) {
             peekedNumberLength = i;
-            return peeked = PEEKED_NUMBER;
+             peeked.setType(PEEKED_NUMBER);
+            return peeked.getType();
         } else {
             return PEEKED_NONE;
         }
@@ -829,9 +797,10 @@ public class JsonReader implements Closeable {
      *                     name.
      */
     public String nextName() throws IOException {
-        int p = peeked;
+        int p =peeked.getType();
         if (p == PEEKED_NONE) {
             p = doPeek();
+            peeked.setType(p);
         }
         String result;
         if (p == PEEKED_UNQUOTED_NAME) {
@@ -843,7 +812,7 @@ public class JsonReader implements Closeable {
         } else {
             throw new IllegalStateException("Expected a name but was " + peek() + locationString());
         }
-        peeked = PEEKED_NONE;
+        peeked.setType(PEEKED_NONE);
         nestingStack.setLastPathName(result);
         return result;
     }
@@ -857,9 +826,10 @@ public class JsonReader implements Closeable {
      *                               this reader is closed.
      */
     public String nextString() throws IOException {
-        int p = peeked;
+        int p =peeked.getType();
         if (p == PEEKED_NONE) {
             p = doPeek();
+            peeked.setType(p);
         }
         String result;
         if (p == PEEKED_UNQUOTED) {
@@ -879,7 +849,7 @@ public class JsonReader implements Closeable {
         } else {
             throw new IllegalStateException("Expected a string but was " + peek() + locationString());
         }
-        peeked = PEEKED_NONE;
+        peeked.setType(PEEKED_NONE);
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -892,17 +862,18 @@ public class JsonReader implements Closeable {
      *                               this reader is closed.
      */
     public boolean nextBoolean() throws IOException {
-        int p = peeked;
+        int p =peeked.getType();
 
         if (p == PEEKED_NONE) {
             p = doPeek();
+            peeked.setType(p);
         }
         if (p == PEEKED_TRUE) {
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
             return true;
         } else if (p == PEEKED_FALSE) {
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
             return false;
         }
@@ -917,12 +888,13 @@ public class JsonReader implements Closeable {
      *                               reader is closed.
      */
     public void nextNull() throws IOException {
-        int p = peeked;
+        int p =peeked.getType();
         if (p == PEEKED_NONE) {
             p = doPeek();
+            peeked.setType(p);
         }
         if (p == PEEKED_NULL) {
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
         } else {
             throw new IllegalStateException("Expected null but was " + peek() + locationString());
@@ -939,15 +911,15 @@ public class JsonReader implements Closeable {
      *                               as a double, or is non-finite.
      */
     public double nextDouble() throws IOException {
-        int p = peeked;
-        int stackSize = nestingStack.getOccupancy();
+        int p =peeked.getType();
 
         if (p == PEEKED_NONE) {
             p = doPeek();
+            peeked.setType(p);
         }
 
         if (p == PEEKED_LONG) {
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
             return (double) peekedLong;
         }
@@ -963,14 +935,14 @@ public class JsonReader implements Closeable {
             throw new IllegalStateException("Expected a double but was " + peek() + locationString());
         }
 
-        peeked = PEEKED_BUFFERED;
+        peeked.setType(PEEKED_BUFFERED);
         double result = Double.parseDouble(peekedString); // don't catch this NumberFormatException.
         if (!lenient && (Double.isNaN(result) || Double.isInfinite(result))) {
             throw new MalformedJsonException(
                     "JSON forbids NaN and infinities: " + result + locationString());
         }
         peekedString = null;
-        peeked = PEEKED_NONE;
+        peeked.setType(PEEKED_NONE);
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -986,15 +958,15 @@ public class JsonReader implements Closeable {
      *                               as a number, or exactly represented as a long.
      */
     public long nextLong() throws IOException {
-        int p = peeked;
-        int stackSize = nestingStack.getOccupancy();
+        int p =peeked.getType();
 
         if (p == PEEKED_NONE) {
             p = doPeek();
+            peeked.setType(p);
         }
 
         if (p == PEEKED_LONG) {
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
             return peekedLong;
         }
@@ -1010,7 +982,7 @@ public class JsonReader implements Closeable {
             }
             try {
                 long result = Long.parseLong(peekedString);
-                peeked = PEEKED_NONE;
+                peeked.setType(PEEKED_NONE);
                 nestingStack.increaseLastPathIndex();
                 return result;
             } catch (NumberFormatException ignored) {
@@ -1020,14 +992,14 @@ public class JsonReader implements Closeable {
             throw new IllegalStateException("Expected a long but was " + peek() + locationString());
         }
 
-        peeked = PEEKED_BUFFERED;
+        peeked.setType(PEEKED_BUFFERED);
         double asDouble = Double.parseDouble(peekedString); // don't catch this NumberFormatException.
         long result = (long) asDouble;
         if (result != asDouble) { // Make sure no precision was lost casting to 'long'.
             throw new NumberFormatException("Expected a long but was " + peekedString + locationString());
         }
         peekedString = null;
-        peeked = PEEKED_NONE;
+        peeked.setType(PEEKED_NONE);
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -1220,10 +1192,11 @@ public class JsonReader implements Closeable {
      *                               as a number, or exactly represented as an int.
      */
     public int nextInt() throws IOException {
-        int p = peeked;
-        int stackSize = nestingStack.getOccupancy();
+        int p =peeked.getType();
+
         if (p == PEEKED_NONE) {
             p = doPeek();
+            peeked.setType(p);
         }
 
         int result;
@@ -1232,7 +1205,7 @@ public class JsonReader implements Closeable {
             if (peekedLong != result) { // Make sure no precision was lost casting to 'int'.
                 throw new NumberFormatException("Expected an int but was " + peekedLong + locationString());
             }
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
             return result;
         }
@@ -1248,7 +1221,7 @@ public class JsonReader implements Closeable {
             }
             try {
                 result = Integer.parseInt(peekedString);
-                peeked = PEEKED_NONE;
+                peeked.setType(PEEKED_NONE);
                 nestingStack.increaseLastPathIndex();
                 return result;
             } catch (NumberFormatException ignored) {
@@ -1258,14 +1231,14 @@ public class JsonReader implements Closeable {
             throw new IllegalStateException("Expected an int but was " + peek() + locationString());
         }
 
-        peeked = PEEKED_BUFFERED;
+        peeked.setType(PEEKED_BUFFERED);
         double asDouble = Double.parseDouble(peekedString); // don't catch this NumberFormatException.
         result = (int) asDouble;
         if (result != asDouble) { // Make sure no precision was lost casting to 'int'.
             throw new NumberFormatException("Expected an int but was " + peekedString + locationString());
         }
         peekedString = null;
-        peeked = PEEKED_NONE;
+        peeked.setType(PEEKED_NONE);
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -1275,7 +1248,7 @@ public class JsonReader implements Closeable {
      */
     @Override
     public void close() throws IOException {
-        peeked = PEEKED_NONE;
+        peeked.setType(PEEKED_NONE);
         nestingStack.close();
         in.close();
     }
@@ -1289,9 +1262,10 @@ public class JsonReader implements Closeable {
         int count = 0;
         int stackSize = nestingStack.getOccupancy();
         do {
-            int p = peeked;
+            int p =peeked.getType();
             if (p == PEEKED_NONE) {
                 p = doPeek();
+                peeked.setType(p);
             }
 
             if (p == PEEKED_BEGIN_ARRAY) {
@@ -1315,7 +1289,7 @@ public class JsonReader implements Closeable {
             } else if (p == PEEKED_NUMBER) {
                 pos += peekedNumberLength;
             }
-            peeked = PEEKED_NONE;
+            peeked.setType(PEEKED_NONE);
         } while (count != 0);
 
         nestingStack.increaseLastPathIndex();
@@ -1690,16 +1664,17 @@ public class JsonReader implements Closeable {
                     ((JsonTreeReader) reader).promoteNameToValue();
                     return;
                 }
-                int p = reader.peeked;
+                int p =reader.peeked.getType();
+
                 if (p == PEEKED_NONE) {
                     p = reader.doPeek();
                 }
                 if (p == PEEKED_DOUBLE_QUOTED_NAME) {
-                    reader.peeked = PEEKED_DOUBLE_QUOTED;
+                    reader.peeked.setType(PEEKED_DOUBLE_QUOTED);
                 } else if (p == PEEKED_SINGLE_QUOTED_NAME) {
-                    reader.peeked = PEEKED_SINGLE_QUOTED;
+                    reader.peeked.setType(PEEKED_SINGLE_QUOTED);
                 } else if (p == PEEKED_UNQUOTED_NAME) {
-                    reader.peeked = PEEKED_UNQUOTED;
+                    reader.peeked.setType(PEEKED_UNQUOTED);
                 } else {
                     throw new IllegalStateException(
                             "Expected a name but was " + reader.peek() + reader.locationString());

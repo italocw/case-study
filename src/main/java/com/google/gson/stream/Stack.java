@@ -6,7 +6,6 @@ public class Stack {
     private int[] jsonScope = new int[32];
     private int occupancy = 0;
 
-
     /*
      * The path members. It corresponds directly to stack: At indices where the
      * stack contains an object (EMPTY_OBJECT, DANGLING_NAME or NONEMPTY_OBJECT),
@@ -17,7 +16,6 @@ public class Stack {
      */
     private String[] pathNames = new String[32];
     private int[] pathIndices = new int[32];
-
 
     public Stack() {
         jsonScope[occupancy] = JsonScope.EMPTY_DOCUMENT;
@@ -55,7 +53,6 @@ public class Stack {
         jsonScope = Arrays.copyOf(jsonScope, newLength);
         pathIndices = Arrays.copyOf(pathIndices, newLength);
         pathNames = Arrays.copyOf(pathNames, newLength);
-
     }
 
     public int getScopeFromIndex(int index) {
