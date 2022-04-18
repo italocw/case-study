@@ -229,25 +229,6 @@ public class JsonReader implements Closeable {
 
     Peeked peeked = new Peeked();
 
-    /**
-     * A peeked value that was composed entirely of digits with an optional
-     * leading dash. Positive values may not have a leading 0.
-     */
-    private long peekedLong;
-
-    /**
-     * The number of characters in a peeked number literal. Increment 'pos' by
-     * this after reading a number.
-     */
-    private int peekedNumberLength;
-
-    /**
-     * A peeked string that should be parsed on the next double, long or string.
-     * This is populated before a numeric value is parsed and used if that parsing
-     * fails.
-     */
-    private String peekedString;
-
     /*
      * The nesting stack. Using a manual array rather than an ArrayList saves 20%.
      */
@@ -724,14 +705,12 @@ public class JsonReader implements Closeable {
 
         // We've read a complete number. Decide if it's a PEEKED_LONG or a PEEKED_NUMBER.
         if (last == NUMBER_CHAR_DIGIT && fitsInLong && (value != Long.MIN_VALUE || negative) && (value != 0 || false == negative)) {
-            peekedLong = negative ? value : -value;
+            peeked.setLong(negative, value);
             pos += i;
-            peeked.setType(PEEKED_LONG);
             return peeked.getType();
         } else if (last == NUMBER_CHAR_DIGIT || last == NUMBER_CHAR_FRACTION_DIGIT
                 || last == NUMBER_CHAR_EXP_DIGIT) {
-            peekedNumberLength = i;
-            peeked.setType(PEEKED_NUMBER);
+            peeked.setNumber(i);
             return peeked.getType();
         } else {
             return PEEKED_NONE;
@@ -809,11 +788,12 @@ public class JsonReader implements Closeable {
         } else if (p == PEEKED_DOUBLE_QUOTED) {
             result = nextQuotedValue('"');
         } else if (p == PEEKED_BUFFERED) {
-            result = peekedString;
-            peekedString = null;
+            result = peeked.getString();
+           peeked.setString(null);
         } else if (p == PEEKED_LONG) {
-            result = Long.toString(peekedLong);
+            result = Long.toString(peeked.getLong());
         } else if (p == PEEKED_NUMBER) {
+            int peekedNumberLength = peeked.getNumberLength();
             result = new String(buffer, pos, peekedNumberLength);
             pos += peekedNumberLength;
         } else {
@@ -882,27 +862,27 @@ public class JsonReader implements Closeable {
         if (p == PEEKED_LONG) {
             peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
-            return (double) peekedLong;
+            return (double) peeked.getLong();
         }
-
+        int peekedNumberLength = peeked.getNumberLength();
         if (p == PEEKED_NUMBER) {
-            peekedString = new String(buffer, pos, peekedNumberLength);
+            peeked.setString(new String(buffer, pos, peekedNumberLength));
             pos += peekedNumberLength;
         } else if (p == PEEKED_SINGLE_QUOTED || p == PEEKED_DOUBLE_QUOTED) {
-            peekedString = nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"');
+            peeked.setString(nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"'));
         } else if (p == PEEKED_UNQUOTED) {
-            peekedString = nextUnquotedValue();
+            peeked.setString(nextUnquotedValue());
         } else if (p != PEEKED_BUFFERED) {
             throw new IllegalStateException("Expected a double but was " + peek() + locationString());
         }
 
         peeked.setType(PEEKED_BUFFERED);
-        double result = Double.parseDouble(peekedString); // don't catch this NumberFormatException.
+        double result = Double.parseDouble(peeked.getString()); // don't catch this NumberFormatException.
         if (!lenient && (Double.isNaN(result) || Double.isInfinite(result))) {
             throw new MalformedJsonException(
                     "JSON forbids NaN and infinities: " + result + locationString());
         }
-        peekedString = null;
+        peeked.setString(null);
         peeked.setType(PEEKED_NONE);
         nestingStack.increaseLastPathIndex();
         return result;
@@ -925,20 +905,22 @@ public class JsonReader implements Closeable {
         if (p == PEEKED_LONG) {
             peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
-            return peekedLong;
+            return peeked.getLong();
         }
 
         if (p == PEEKED_NUMBER) {
-            peekedString = new String(buffer, pos, peekedNumberLength);
+            int peekedNumberLength = peeked.getNumberLength();
+
+            peeked.setString(new String(buffer, pos, peekedNumberLength));
             pos += peekedNumberLength;
         } else if (p == PEEKED_SINGLE_QUOTED || p == PEEKED_DOUBLE_QUOTED || p == PEEKED_UNQUOTED) {
             if (p == PEEKED_UNQUOTED) {
-                peekedString = nextUnquotedValue();
+                peeked.setString(nextUnquotedValue());
             } else {
-                peekedString = nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"');
+                peeked.setString(nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"'));
             }
             try {
-                long result = Long.parseLong(peekedString);
+                long result = Long.parseLong(peeked.getString());
                 peeked.setType(PEEKED_NONE);
                 nestingStack.increaseLastPathIndex();
                 return result;
@@ -950,12 +932,12 @@ public class JsonReader implements Closeable {
         }
 
         peeked.setType(PEEKED_BUFFERED);
-        double asDouble = Double.parseDouble(peekedString); // don't catch this NumberFormatException.
+        double asDouble = Double.parseDouble(peeked.getString()); // don't catch this NumberFormatException.
         long result = (long) asDouble;
         if (result != asDouble) { // Make sure no precision was lost casting to 'long'.
-            throw new NumberFormatException("Expected a long but was " + peekedString + locationString());
+            throw new NumberFormatException("Expected a long but was " + peeked.getString() + locationString());
         }
-        peekedString = null;
+        peeked.setString(null);
         peeked.setType(PEEKED_NONE);
         nestingStack.increaseLastPathIndex();
         return result;
@@ -1154,9 +1136,9 @@ public class JsonReader implements Closeable {
 
         int result;
         if (p == PEEKED_LONG) {
-            result = (int) peekedLong;
-            if (peekedLong != result) { // Make sure no precision was lost casting to 'int'.
-                throw new NumberFormatException("Expected an int but was " + peekedLong + locationString());
+            result = (int) peeked.getLong();
+            if (peeked.getLong() != result) { // Make sure no precision was lost casting to 'int'.
+                throw new NumberFormatException("Expected an int but was " + peeked.getLong() + locationString());
             }
             peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
@@ -1164,16 +1146,17 @@ public class JsonReader implements Closeable {
         }
 
         if (p == PEEKED_NUMBER) {
-            peekedString = new String(buffer, pos, peekedNumberLength);
+            int peekedNumberLength = peeked.getNumberLength();
+            peeked.setString(new String(buffer, pos, peekedNumberLength));
             pos += peekedNumberLength;
         } else if (p == PEEKED_SINGLE_QUOTED || p == PEEKED_DOUBLE_QUOTED || p == PEEKED_UNQUOTED) {
             if (p == PEEKED_UNQUOTED) {
-                peekedString = nextUnquotedValue();
+                peeked.setString(nextUnquotedValue());
             } else {
-                peekedString = nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"');
+                peeked.setString(nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"'));
             }
             try {
-                result = Integer.parseInt(peekedString);
+                result = Integer.parseInt(peeked.getString());
                 peeked.setType(PEEKED_NONE);
                 nestingStack.increaseLastPathIndex();
                 return result;
@@ -1185,12 +1168,12 @@ public class JsonReader implements Closeable {
         }
 
         peeked.setType(PEEKED_BUFFERED);
-        double asDouble = Double.parseDouble(peekedString); // don't catch this NumberFormatException.
+        double asDouble = Double.parseDouble(peeked.getString()); // don't catch this NumberFormatException.
         result = (int) asDouble;
         if (result != asDouble) { // Make sure no precision was lost casting to 'int'.
-            throw new NumberFormatException("Expected an int but was " + peekedString + locationString());
+            throw new NumberFormatException("Expected an int but was " + peeked.getString() + locationString());
         }
-        peekedString = null;
+        peeked.setString(null);
         peeked.setType(PEEKED_NONE);
         nestingStack.increaseLastPathIndex();
         return result;
@@ -1236,7 +1219,7 @@ public class JsonReader implements Closeable {
             } else if (p == PEEKED_DOUBLE_QUOTED || p == PEEKED_DOUBLE_QUOTED_NAME) {
                 skipQuotedValue('"');
             } else if (p == PEEKED_NUMBER) {
-                pos += peekedNumberLength;
+                pos += peeked.getNumberLength();
             }
             peeked.setType(PEEKED_NONE);
         } while (count != 0);

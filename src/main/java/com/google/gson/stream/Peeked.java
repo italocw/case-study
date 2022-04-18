@@ -91,4 +91,31 @@ public class Peeked {
                 throw new AssertionError();
         }
     }
+
+    public void setLong(boolean negative, long value) {
+        peekedLong = negative ? value : -value;
+        type = PEEKED_LONG;
+    }
+
+    public void setNumber(int length) {
+        peekedNumberLength = length;
+        type = PEEKED_NUMBER;
+
+    }
+
+    public long getLong() {
+        return peekedLong;
+    }
+
+    public int getNumberLength() {
+        return peekedNumberLength;
+    }
+
+    public void setString(String value) {
+        peekedString = value;
+    }
+
+    public String getString() {
+        return peekedString;
+    }
 }
