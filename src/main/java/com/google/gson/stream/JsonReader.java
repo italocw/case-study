@@ -24,6 +24,8 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.Reader;
 
+import static com.google.gson.stream.Peeked.*;
+
 /**
  * Reads a JSON (<a href="http://www.ietf.org/rfc/rfc7159.txt">RFC 7159</a>)
  * encoded value as a stream of tokens. This stream includes both literal
@@ -191,31 +193,6 @@ import java.io.Reader;
 public class JsonReader implements Closeable {
     private static final long MIN_INCOMPLETE_INTEGER = Long.MIN_VALUE / 10;
 
-    private static final int PEEKED_NONE = 0;
-    private static final int PEEKED_BEGIN_OBJECT = 1;
-    private static final int PEEKED_END_OBJECT = 2;
-    private static final int PEEKED_BEGIN_ARRAY = 3;
-    private static final int PEEKED_END_ARRAY = 4;
-    private static final int PEEKED_TRUE = 5;
-    private static final int PEEKED_FALSE = 6;
-    private static final int PEEKED_NULL = 7;
-    private static final int PEEKED_SINGLE_QUOTED = 8;
-    private static final int PEEKED_DOUBLE_QUOTED = 9;
-    private static final int PEEKED_UNQUOTED = 10;
-    /**
-     * When this is returned, the string value is stored in peekedString.
-     */
-    private static final int PEEKED_BUFFERED = 11;
-    private static final int PEEKED_SINGLE_QUOTED_NAME = 12;
-    private static final int PEEKED_DOUBLE_QUOTED_NAME = 13;
-    private static final int PEEKED_UNQUOTED_NAME = 14;
-    /**
-     * When this is returned, the integer value is stored in peekedLong.
-     */
-    private static final int PEEKED_LONG = 15;
-    private static final int PEEKED_NUMBER = 16;
-    private static final int PEEKED_EOF = 17;
-
     /* State machine when parsing numbers */
     private static final int NUMBER_CHAR_NONE = 0;
     private static final int NUMBER_CHAR_SIGN = 1;
@@ -328,14 +305,19 @@ public class JsonReader implements Closeable {
         return lenient;
     }
 
+    private void ensurePicking() throws IOException {
+        int p = peeked.getType();
+        if (p == PEEKED_NONE) {
+            doPeek();
+        }
+    }
+
     /**
      * Consumes the next token from the JSON stream and asserts that it is the
      * beginning of a new array.
      */
     public void beginArray() throws IOException {
-        if (peeked.getType() == PEEKED_NONE) {
-            peeked.setType(doPeek());
-        }
+        ensurePicking();
         if (peeked.getType() == PEEKED_BEGIN_ARRAY) {
             push(JsonScope.EMPTY_ARRAY);
             nestingStack.moveToNextArrayBegin();
@@ -350,11 +332,9 @@ public class JsonReader implements Closeable {
      * end of the current array.
      */
     public void endArray() throws IOException {
-        int p = peeked.getType();
-        if (p == PEEKED_NONE) {
-            p = doPeek();
-        }
-        if (p == PEEKED_END_ARRAY) {
+        ensurePicking();
+
+        if (peeked.getType() == PEEKED_END_ARRAY) {
             nestingStack.notifyArrayEnd();
             peeked.setType(PEEKED_NONE);
         } else {
@@ -367,9 +347,8 @@ public class JsonReader implements Closeable {
      * beginning of a new object.
      */
     public void beginObject() throws IOException {
-        if (peeked.getType() == PEEKED_NONE) {
-            peeked.setType(doPeek());
-        }
+        ensurePicking();
+
         if (peeked.getType() == PEEKED_BEGIN_OBJECT) {
             push(JsonScope.EMPTY_OBJECT);
             peeked.setType(PEEKED_NONE);
@@ -383,9 +362,8 @@ public class JsonReader implements Closeable {
      * end of the current object.
      */
     public void endObject() throws IOException {
-        if (peeked.getType() == PEEKED_NONE) {
-            peeked.setType(doPeek());
-        }
+        ensurePicking();
+
         if (peeked.getType() == PEEKED_END_OBJECT) {
             nestingStack.notifyObjectEnd();
             peeked.setType(PEEKED_NONE);
@@ -398,9 +376,7 @@ public class JsonReader implements Closeable {
      * Returns true if the current array or object has another element.
      */
     public boolean hasNext() throws IOException {
-        if (peeked.getType() == PEEKED_NONE) {
-            peeked.setType(doPeek());
-        }
+        ensurePicking();
         return peeked.hasNext();
     }
 
@@ -408,14 +384,12 @@ public class JsonReader implements Closeable {
      * Returns the type of the next token without consuming it.
      */
     public JsonToken peek() throws IOException {
-        if (peeked.getType() == PEEKED_NONE) {
-            peeked.setType(doPeek());
-        }
-
+        ensurePicking();
         return peeked.toJsonToken();
     }
 
-    int doPeek() throws IOException {
+
+    void doPeek() throws IOException {
         boolean tokenWasPeeked = false;
         int peekStack = nestingStack.getCurrentScope();
         if (peekStack == JsonScope.EMPTY_ARRAY) {
@@ -450,10 +424,12 @@ public class JsonReader implements Closeable {
             tokenWasPeeked = tryPeekToken(peekStack);
 
             if (!tokenWasPeeked) {
-                tokenWasPeeked = peekKeyword() != PEEKED_NONE;
+                peeked.setType(peekKeyword());
+                tokenWasPeeked = peeked.getType() != PEEKED_NONE;
             }
             if (!tokenWasPeeked) {
-                tokenWasPeeked = peekNumber() != PEEKED_NONE;
+                peeked.setType(peekNumber());
+                tokenWasPeeked = peeked.getType() != PEEKED_NONE;
 
                 if (!tokenWasPeeked) {
                     if (!isLiteral(buffer[pos])) {
@@ -464,7 +440,6 @@ public class JsonReader implements Closeable {
                 }
             }
         }
-        return peeked.getType();
     }
 
     private boolean tryPeekToken(int peekStack) throws IOException {
@@ -655,7 +630,6 @@ public class JsonReader implements Closeable {
         // We've found the keyword followed either by EOF or by a non-literal character.
         pos += length;
         peeked.setType(peeking);
-
         return peeked.getType();
     }
 
@@ -757,7 +731,7 @@ public class JsonReader implements Closeable {
         } else if (last == NUMBER_CHAR_DIGIT || last == NUMBER_CHAR_FRACTION_DIGIT
                 || last == NUMBER_CHAR_EXP_DIGIT) {
             peekedNumberLength = i;
-             peeked.setType(PEEKED_NUMBER);
+            peeked.setType(PEEKED_NUMBER);
             return peeked.getType();
         } else {
             return PEEKED_NONE;
@@ -797,11 +771,9 @@ public class JsonReader implements Closeable {
      *                     name.
      */
     public String nextName() throws IOException {
-        int p =peeked.getType();
-        if (p == PEEKED_NONE) {
-            p = doPeek();
-            peeked.setType(p);
-        }
+        ensurePicking();
+        int p = peeked.getType();
+
         String result;
         if (p == PEEKED_UNQUOTED_NAME) {
             result = nextUnquotedValue();
@@ -826,11 +798,9 @@ public class JsonReader implements Closeable {
      *                               this reader is closed.
      */
     public String nextString() throws IOException {
-        int p =peeked.getType();
-        if (p == PEEKED_NONE) {
-            p = doPeek();
-            peeked.setType(p);
-        }
+        ensurePicking();
+        int p = peeked.getType();
+
         String result;
         if (p == PEEKED_UNQUOTED) {
             result = nextUnquotedValue();
@@ -862,12 +832,9 @@ public class JsonReader implements Closeable {
      *                               this reader is closed.
      */
     public boolean nextBoolean() throws IOException {
-        int p =peeked.getType();
+        ensurePicking();
+        int p = peeked.getType();
 
-        if (p == PEEKED_NONE) {
-            p = doPeek();
-            peeked.setType(p);
-        }
         if (p == PEEKED_TRUE) {
             peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
@@ -888,11 +855,9 @@ public class JsonReader implements Closeable {
      *                               reader is closed.
      */
     public void nextNull() throws IOException {
-        int p =peeked.getType();
-        if (p == PEEKED_NONE) {
-            p = doPeek();
-            peeked.setType(p);
-        }
+        ensurePicking();
+        int p = peeked.getType();
+
         if (p == PEEKED_NULL) {
             peeked.setType(PEEKED_NONE);
             nestingStack.increaseLastPathIndex();
@@ -911,12 +876,8 @@ public class JsonReader implements Closeable {
      *                               as a double, or is non-finite.
      */
     public double nextDouble() throws IOException {
-        int p =peeked.getType();
-
-        if (p == PEEKED_NONE) {
-            p = doPeek();
-            peeked.setType(p);
-        }
+        ensurePicking();
+        int p = peeked.getType();
 
         if (p == PEEKED_LONG) {
             peeked.setType(PEEKED_NONE);
@@ -958,12 +919,8 @@ public class JsonReader implements Closeable {
      *                               as a number, or exactly represented as a long.
      */
     public long nextLong() throws IOException {
-        int p =peeked.getType();
-
-        if (p == PEEKED_NONE) {
-            p = doPeek();
-            peeked.setType(p);
-        }
+        ensurePicking();
+        int p = peeked.getType();
 
         if (p == PEEKED_LONG) {
             peeked.setType(PEEKED_NONE);
@@ -1192,12 +1149,8 @@ public class JsonReader implements Closeable {
      *                               as a number, or exactly represented as an int.
      */
     public int nextInt() throws IOException {
-        int p =peeked.getType();
-
-        if (p == PEEKED_NONE) {
-            p = doPeek();
-            peeked.setType(p);
-        }
+        ensurePicking();
+        int p = peeked.getType();
 
         int result;
         if (p == PEEKED_LONG) {
@@ -1260,13 +1213,9 @@ public class JsonReader implements Closeable {
      */
     public void skipValue() throws IOException {
         int count = 0;
-        int stackSize = nestingStack.getOccupancy();
         do {
-            int p =peeked.getType();
-            if (p == PEEKED_NONE) {
-                p = doPeek();
-                peeked.setType(p);
-            }
+            ensurePicking();
+            int p = peeked.getType();
 
             if (p == PEEKED_BEGIN_ARRAY) {
                 push(JsonScope.EMPTY_ARRAY);
@@ -1664,11 +1613,10 @@ public class JsonReader implements Closeable {
                     ((JsonTreeReader) reader).promoteNameToValue();
                     return;
                 }
-                int p =reader.peeked.getType();
 
-                if (p == PEEKED_NONE) {
-                    p = reader.doPeek();
-                }
+                reader.ensurePicking();
+                int p = reader.peeked.getType();
+
                 if (p == PEEKED_DOUBLE_QUOTED_NAME) {
                     reader.peeked.setType(PEEKED_DOUBLE_QUOTED);
                 } else if (p == PEEKED_SINGLE_QUOTED_NAME) {
