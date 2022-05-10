@@ -227,7 +227,7 @@ public class JsonReader implements Closeable {
     private int lineNumber = 0;
     private int lineStart = 0;
 
-    JsonStreamToken jsonStreamToken = new JsonStreamToken();
+    private JsonStreamToken jsonStreamToken = new JsonStreamToken();
 
     /*
      * The nesting stack. Using a manual array rather than an ArrayList saves 20%.
@@ -370,7 +370,7 @@ public class JsonReader implements Closeable {
     }
 
 
-    void doPeek() throws IOException {
+    private void doPeek() throws IOException {
         boolean tokenWasPeeked = false;
         int jsonScope = nestingStack.getCurrentScope();
         if (jsonScope == JsonScope.EMPTY_ARRAY) {
@@ -789,7 +789,7 @@ public class JsonReader implements Closeable {
             result = nextQuotedValue('"');
         } else if (p == PEEKED_BUFFERED) {
             result = jsonStreamToken.getString();
-           jsonStreamToken.setString(null);
+            jsonStreamToken.setString(null);
         } else if (p == PEEKED_LONG) {
             result = Long.toString(jsonStreamToken.getLong());
         } else if (p == PEEKED_NUMBER) {
