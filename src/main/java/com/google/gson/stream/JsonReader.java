@@ -24,7 +24,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.Reader;
 
-import static com.google.gson.stream.JsonStreamToken.*;
+import static com.google.gson.stream.JsonStreamTokenHolder.*;
 
 /**
  * Reads a JSON (<a href="http://www.ietf.org/rfc/rfc7159.txt">RFC 7159</a>)
@@ -227,7 +227,7 @@ public class JsonReader implements Closeable {
     private int lineNumber = 0;
     private int lineStart = 0;
 
-    private JsonStreamToken jsonStreamToken = new JsonStreamToken();
+    private JsonStreamTokenHolder jsonStreamTokenHolder = new JsonStreamTokenHolder();
 
     /*
      * The nesting stack. Using a manual array rather than an ArrayList saves 20%.
@@ -287,8 +287,7 @@ public class JsonReader implements Closeable {
     }
 
     private void ensurePicking() throws IOException {
-        int p = jsonStreamToken.getType();
-        if (p == PEEKED_NONE) {
+        if (!jsonStreamTokenHolder.tokenWasPeeked()) {
             doPeek();
         }
     }
@@ -299,10 +298,10 @@ public class JsonReader implements Closeable {
      */
     public void beginArray() throws IOException {
         ensurePicking();
-        if (jsonStreamToken.getType() == PEEKED_BEGIN_ARRAY) {
+        if (jsonStreamTokenHolder.getType() == PEEKED_BEGIN_ARRAY) {
             push(JsonScope.EMPTY_ARRAY);
             nestingStack.moveToNextArrayBegin();
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
         } else {
             throw new IllegalStateException("Expected BEGIN_ARRAY but was " + peek() + locationString());
         }
@@ -315,9 +314,9 @@ public class JsonReader implements Closeable {
     public void endArray() throws IOException {
         ensurePicking();
 
-        if (jsonStreamToken.getType() == PEEKED_END_ARRAY) {
+        if (jsonStreamTokenHolder.getType() == PEEKED_END_ARRAY) {
             nestingStack.notifyArrayEnd();
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
         } else {
             throw new IllegalStateException("Expected END_ARRAY but was " + peek() + locationString());
         }
@@ -330,9 +329,9 @@ public class JsonReader implements Closeable {
     public void beginObject() throws IOException {
         ensurePicking();
 
-        if (jsonStreamToken.getType() == PEEKED_BEGIN_OBJECT) {
+        if (jsonStreamTokenHolder.getType() == PEEKED_BEGIN_OBJECT) {
             push(JsonScope.EMPTY_OBJECT);
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
         } else {
             throw new IllegalStateException("Expected BEGIN_OBJECT but was " + peek() + locationString());
         }
@@ -345,9 +344,9 @@ public class JsonReader implements Closeable {
     public void endObject() throws IOException {
         ensurePicking();
 
-        if (jsonStreamToken.getType() == PEEKED_END_OBJECT) {
+        if (jsonStreamTokenHolder.getType() == PEEKED_END_OBJECT) {
             nestingStack.notifyObjectEnd();
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
         } else {
             throw new IllegalStateException("Expected END_OBJECT but was " + peek() + locationString());
         }
@@ -358,7 +357,7 @@ public class JsonReader implements Closeable {
      */
     public boolean hasNext() throws IOException {
         ensurePicking();
-        return jsonStreamToken.hasNext();
+        return jsonStreamTokenHolder.hasNext();
     }
 
     /**
@@ -366,25 +365,23 @@ public class JsonReader implements Closeable {
      */
     public JsonToken peek() throws IOException {
         ensurePicking();
-        return jsonStreamToken.toJsonToken();
+        return jsonStreamTokenHolder.toJsonToken();
     }
 
 
     private void doPeek() throws IOException {
-        boolean tokenWasPeeked = false;
         int jsonScope = nestingStack.getCurrentScope();
         if (jsonScope == JsonScope.EMPTY_ARRAY) {
             nestingStack.setCurrentScope(JsonScope.NONEMPTY_ARRAY);
         } else if (jsonScope == JsonScope.NONEMPTY_ARRAY) {
-            tokenWasPeeked = tryPeekTokenForNonEmptyArrayScope();
+            tryPeekTokenForNonEmptyArrayScope();
         } else if (jsonScope == JsonScope.EMPTY_OBJECT || jsonScope == JsonScope.NONEMPTY_OBJECT) {
             nestingStack.setCurrentScope(JsonScope.DANGLING_NAME);
             if (jsonScope == JsonScope.NONEMPTY_OBJECT) {
-                tokenWasPeeked = tryPeekTokenForNonEmptyObjectScope();
+                tryPeekTokenForNonEmptyObjectScope();
             }
-            if (!tokenWasPeeked) {
+            if (!jsonStreamTokenHolder.tokenWasPeeked()) {
                 peekTokenWhenObject(jsonScope);
-                tokenWasPeeked = true;
             }
 
         } else if (jsonScope == JsonScope.DANGLING_NAME) {
@@ -397,40 +394,35 @@ public class JsonReader implements Closeable {
             }
             nestingStack.setCurrentScope(JsonScope.NONEMPTY_DOCUMENT);
         } else if (jsonScope == JsonScope.NONEMPTY_DOCUMENT) {
-            tokenWasPeeked = tryPeekTokenForNonEmptyDocumentScope();
+            tryPeekTokenForNonEmptyDocumentScope();
         } else if (jsonScope == JsonScope.CLOSED) {
             throw new IllegalStateException("JsonReader is closed");
         }
-        if (!tokenWasPeeked) {
-            tokenWasPeeked = tryPeekTokenForSomethingEmptyScope(jsonScope);
-
-            if (!tokenWasPeeked) {
-                jsonStreamToken.setType(peekKeyword());
-                tokenWasPeeked = jsonStreamToken.getType() != PEEKED_NONE;
+        if (!jsonStreamTokenHolder.tokenWasPeeked()) {
+            tryPeekTokenForSomethingEmptyScope(jsonScope);
+            if (!jsonStreamTokenHolder.tokenWasPeeked()) {
+                jsonStreamTokenHolder.setType(peekKeyword());
             }
-            if (!tokenWasPeeked) {
-                jsonStreamToken.setType(peekNumber());
-                tokenWasPeeked = jsonStreamToken.getType() != PEEKED_NONE;
+            if (!jsonStreamTokenHolder.tokenWasPeeked()) {
+                jsonStreamTokenHolder.setType(peekNumber());
 
-                if (!tokenWasPeeked) {
+                if (!jsonStreamTokenHolder.tokenWasPeeked()) {
                     if (!isLiteral(buffer[pos])) {
                         throw syntaxError("Expected value");
                     }
                     checkLenient();
-                    jsonStreamToken.setType(PEEKED_UNQUOTED);
+                    jsonStreamTokenHolder.setType(PEEKED_UNQUOTED);
                 }
             }
         }
     }
 
-    private boolean tryPeekTokenForSomethingEmptyScope(int peekStack) throws IOException {
-        boolean tokenWasPeeked = false;
+    private void tryPeekTokenForSomethingEmptyScope(int peekStack) throws IOException {
         int c = nextNonWhitespace(true);
         switch (c) {
             case ']':
                 if (peekStack == JsonScope.EMPTY_ARRAY) {
-                    jsonStreamToken.setType(PEEKED_END_ARRAY);
-                    tokenWasPeeked = true;
+                    jsonStreamTokenHolder.setType(PEEKED_END_ARRAY);
                     break;
                 }
                 // fall-through to handle ",]"
@@ -440,46 +432,37 @@ public class JsonReader implements Closeable {
                 if (peekStack == JsonScope.EMPTY_ARRAY || peekStack == JsonScope.NONEMPTY_ARRAY) {
                     checkLenient();
                     pos--;
-                    jsonStreamToken.setType(PEEKED_NULL);
-                    tokenWasPeeked = true;
+                    jsonStreamTokenHolder.setType(PEEKED_NULL);
                     break;
                 } else {
                     throw syntaxError("Unexpected value");
                 }
             case '\'':
                 checkLenient();
-                jsonStreamToken.setType(PEEKED_SINGLE_QUOTED);
-                tokenWasPeeked = true;
+                jsonStreamTokenHolder.setType(PEEKED_SINGLE_QUOTED);
                 break;
             case '"':
-                jsonStreamToken.setType(PEEKED_DOUBLE_QUOTED);
-                tokenWasPeeked = true;
+                jsonStreamTokenHolder.setType(PEEKED_DOUBLE_QUOTED);
                 break;
             case '[':
-                jsonStreamToken.setType(PEEKED_BEGIN_ARRAY);
-                tokenWasPeeked = true;
+                jsonStreamTokenHolder.setType(PEEKED_BEGIN_ARRAY);
                 break;
             case '{':
-                jsonStreamToken.setType(PEEKED_BEGIN_OBJECT);
-                tokenWasPeeked = true;
+                jsonStreamTokenHolder.setType(PEEKED_BEGIN_OBJECT);
                 break;
             default:
                 pos--; // Don't consume the first character in a literal value.
         }
-        return tokenWasPeeked;
     }
 
-    private boolean tryPeekTokenForNonEmptyDocumentScope() throws IOException {
-        boolean tokenWasPeeked = false;
+    private void tryPeekTokenForNonEmptyDocumentScope() throws IOException {
         int character = nextNonWhitespace(false);
         if (character == -1) {
-            jsonStreamToken.setType(PEEKED_EOF);
-            tokenWasPeeked = true;
+            jsonStreamTokenHolder.setType(PEEKED_EOF);
         } else {
             checkLenient();
             pos--;
         }
-        return tokenWasPeeked;
     }
 
     private void lookForColonBeforeValue() throws IOException {
@@ -503,15 +486,15 @@ public class JsonReader implements Closeable {
         int character = nextNonWhitespace(true);
         switch (character) {
             case '"':
-                jsonStreamToken.setType(PEEKED_DOUBLE_QUOTED_NAME);
+                jsonStreamTokenHolder.setType(PEEKED_DOUBLE_QUOTED_NAME);
                 break;
             case '\'':
                 checkLenient();
-                jsonStreamToken.setType(PEEKED_SINGLE_QUOTED_NAME);
+                jsonStreamTokenHolder.setType(PEEKED_SINGLE_QUOTED_NAME);
                 break;
             case '}':
                 if (peekStack != JsonScope.NONEMPTY_OBJECT) {
-                    jsonStreamToken.setType(PEEKED_END_OBJECT);
+                    jsonStreamTokenHolder.setType(PEEKED_END_OBJECT);
                     break;
                 } else {
                     throw syntaxError("Expected name");
@@ -521,7 +504,7 @@ public class JsonReader implements Closeable {
                 checkLenient();
                 pos--; // Don't consume the first character in an unquoted string.
                 if (isLiteral((char) character)) {
-                    jsonStreamToken.setType(PEEKED_UNQUOTED_NAME);
+                    jsonStreamTokenHolder.setType(PEEKED_UNQUOTED_NAME);
                     break;
                 } else {
                     throw syntaxError("Expected name");
@@ -530,14 +513,12 @@ public class JsonReader implements Closeable {
 
     }
 
-    private boolean tryPeekTokenForNonEmptyObjectScope() throws IOException {
-        boolean tokenWasPeeked = false;
+    private void tryPeekTokenForNonEmptyObjectScope() throws IOException {
         // Look for a comma before the next element.
         int character = nextNonWhitespace(true);
         switch (character) {
             case '}':
-                jsonStreamToken.setType(PEEKED_END_OBJECT);
-                tokenWasPeeked = true;
+                jsonStreamTokenHolder.setType(PEEKED_END_OBJECT);
                 break;
             case ';':
                 checkLenient(); // fall-through
@@ -546,18 +527,15 @@ public class JsonReader implements Closeable {
             default:
                 throw syntaxError("Unterminated object");
         }
-        return tokenWasPeeked;
     }
 
 
-    private boolean tryPeekTokenForNonEmptyArrayScope() throws IOException {
+    private void tryPeekTokenForNonEmptyArrayScope() throws IOException {
         // Look for a comma before the next element.
-        boolean tokenWasPeeked = false;
         int character = nextNonWhitespace(true);
         switch (character) {
             case ']':
-                jsonStreamToken.setType(PEEKED_END_ARRAY);
-                tokenWasPeeked = true;
+                jsonStreamTokenHolder.setType(PEEKED_END_ARRAY);
                 break;
             case ';':
                 checkLenient(); // fall-through
@@ -566,7 +544,6 @@ public class JsonReader implements Closeable {
             default:
                 throw syntaxError("Unterminated array");
         }
-        return tokenWasPeeked;
     }
 
     private int peekKeyword() throws IOException {
@@ -610,8 +587,8 @@ public class JsonReader implements Closeable {
 
         // We've found the keyword followed either by EOF or by a non-literal character.
         pos += length;
-        jsonStreamToken.setType(peeking);
-        return jsonStreamToken.getType();
+        jsonStreamTokenHolder.setType(peeking);
+        return jsonStreamTokenHolder.getType();
     }
 
     private int peekNumber() throws IOException {
@@ -705,13 +682,13 @@ public class JsonReader implements Closeable {
 
         // We've read a complete number. Decide if it's a PEEKED_LONG or a PEEKED_NUMBER.
         if (last == NUMBER_CHAR_DIGIT && fitsInLong && (value != Long.MIN_VALUE || negative) && (value != 0 || false == negative)) {
-            jsonStreamToken.setLong(negative, value);
+            jsonStreamTokenHolder.setLong(negative, value);
             pos += i;
-            return jsonStreamToken.getType();
+            return jsonStreamTokenHolder.getType();
         } else if (last == NUMBER_CHAR_DIGIT || last == NUMBER_CHAR_FRACTION_DIGIT
                 || last == NUMBER_CHAR_EXP_DIGIT) {
-            jsonStreamToken.setNumber(i);
-            return jsonStreamToken.getType();
+            jsonStreamTokenHolder.setNumber(i);
+            return jsonStreamTokenHolder.getType();
         } else {
             return PEEKED_NONE;
         }
@@ -751,7 +728,7 @@ public class JsonReader implements Closeable {
      */
     public String nextName() throws IOException {
         ensurePicking();
-        int p = jsonStreamToken.getType();
+        int p = jsonStreamTokenHolder.getType();
 
         String result;
         if (p == PEEKED_UNQUOTED_NAME) {
@@ -763,7 +740,7 @@ public class JsonReader implements Closeable {
         } else {
             throw new IllegalStateException("Expected a name but was " + peek() + locationString());
         }
-        jsonStreamToken.setType(PEEKED_NONE);
+        jsonStreamTokenHolder.clear();
         nestingStack.setLastPathName(result);
         return result;
     }
@@ -778,7 +755,7 @@ public class JsonReader implements Closeable {
      */
     public String nextString() throws IOException {
         ensurePicking();
-        int p = jsonStreamToken.getType();
+        int p = jsonStreamTokenHolder.getType();
 
         String result;
         if (p == PEEKED_UNQUOTED) {
@@ -788,18 +765,18 @@ public class JsonReader implements Closeable {
         } else if (p == PEEKED_DOUBLE_QUOTED) {
             result = nextQuotedValue('"');
         } else if (p == PEEKED_BUFFERED) {
-            result = jsonStreamToken.getString();
-            jsonStreamToken.setString(null);
+            result = jsonStreamTokenHolder.getString();
+            jsonStreamTokenHolder.setString(null);
         } else if (p == PEEKED_LONG) {
-            result = Long.toString(jsonStreamToken.getLong());
+            result = Long.toString(jsonStreamTokenHolder.getLong());
         } else if (p == PEEKED_NUMBER) {
-            int peekedNumberLength = jsonStreamToken.getNumberLength();
+            int peekedNumberLength = jsonStreamTokenHolder.getNumberLength();
             result = new String(buffer, pos, peekedNumberLength);
             pos += peekedNumberLength;
         } else {
             throw new IllegalStateException("Expected a string but was " + peek() + locationString());
         }
-        jsonStreamToken.setType(PEEKED_NONE);
+        jsonStreamTokenHolder.clear();
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -813,14 +790,14 @@ public class JsonReader implements Closeable {
      */
     public boolean nextBoolean() throws IOException {
         ensurePicking();
-        int p = jsonStreamToken.getType();
+        int p = jsonStreamTokenHolder.getType();
 
         if (p == PEEKED_TRUE) {
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
             nestingStack.increaseLastPathIndex();
             return true;
         } else if (p == PEEKED_FALSE) {
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
             nestingStack.increaseLastPathIndex();
             return false;
         }
@@ -836,10 +813,10 @@ public class JsonReader implements Closeable {
      */
     public void nextNull() throws IOException {
         ensurePicking();
-        int p = jsonStreamToken.getType();
+        int p = jsonStreamTokenHolder.getType();
 
         if (p == PEEKED_NULL) {
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
             nestingStack.increaseLastPathIndex();
         } else {
             throw new IllegalStateException("Expected null but was " + peek() + locationString());
@@ -857,33 +834,33 @@ public class JsonReader implements Closeable {
      */
     public double nextDouble() throws IOException {
         ensurePicking();
-        int p = jsonStreamToken.getType();
+        int p = jsonStreamTokenHolder.getType();
 
         if (p == PEEKED_LONG) {
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
             nestingStack.increaseLastPathIndex();
-            return (double) jsonStreamToken.getLong();
+            return (double) jsonStreamTokenHolder.getLong();
         }
-        int peekedNumberLength = jsonStreamToken.getNumberLength();
+        int peekedNumberLength = jsonStreamTokenHolder.getNumberLength();
         if (p == PEEKED_NUMBER) {
-            jsonStreamToken.setString(new String(buffer, pos, peekedNumberLength));
+            jsonStreamTokenHolder.setString(new String(buffer, pos, peekedNumberLength));
             pos += peekedNumberLength;
         } else if (p == PEEKED_SINGLE_QUOTED || p == PEEKED_DOUBLE_QUOTED) {
-            jsonStreamToken.setString(nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"'));
+            jsonStreamTokenHolder.setString(nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"'));
         } else if (p == PEEKED_UNQUOTED) {
-            jsonStreamToken.setString(nextUnquotedValue());
+            jsonStreamTokenHolder.setString(nextUnquotedValue());
         } else if (p != PEEKED_BUFFERED) {
             throw new IllegalStateException("Expected a double but was " + peek() + locationString());
         }
 
-        jsonStreamToken.setType(PEEKED_BUFFERED);
-        double result = Double.parseDouble(jsonStreamToken.getString()); // don't catch this NumberFormatException.
+        jsonStreamTokenHolder.setType(PEEKED_BUFFERED);
+        double result = Double.parseDouble(jsonStreamTokenHolder.getString()); // don't catch this NumberFormatException.
         if (!lenient && (Double.isNaN(result) || Double.isInfinite(result))) {
             throw new MalformedJsonException(
                     "JSON forbids NaN and infinities: " + result + locationString());
         }
-        jsonStreamToken.setString(null);
-        jsonStreamToken.setType(PEEKED_NONE);
+        jsonStreamTokenHolder.setString(null);
+        jsonStreamTokenHolder.clear();
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -900,28 +877,28 @@ public class JsonReader implements Closeable {
      */
     public long nextLong() throws IOException {
         ensurePicking();
-        int p = jsonStreamToken.getType();
+        int p = jsonStreamTokenHolder.getType();
 
         if (p == PEEKED_LONG) {
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
             nestingStack.increaseLastPathIndex();
-            return jsonStreamToken.getLong();
+            return jsonStreamTokenHolder.getLong();
         }
 
         if (p == PEEKED_NUMBER) {
-            int peekedNumberLength = jsonStreamToken.getNumberLength();
+            int peekedNumberLength = jsonStreamTokenHolder.getNumberLength();
 
-            jsonStreamToken.setString(new String(buffer, pos, peekedNumberLength));
+            jsonStreamTokenHolder.setString(new String(buffer, pos, peekedNumberLength));
             pos += peekedNumberLength;
         } else if (p == PEEKED_SINGLE_QUOTED || p == PEEKED_DOUBLE_QUOTED || p == PEEKED_UNQUOTED) {
             if (p == PEEKED_UNQUOTED) {
-                jsonStreamToken.setString(nextUnquotedValue());
+                jsonStreamTokenHolder.setString(nextUnquotedValue());
             } else {
-                jsonStreamToken.setString(nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"'));
+                jsonStreamTokenHolder.setString(nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"'));
             }
             try {
-                long result = Long.parseLong(jsonStreamToken.getString());
-                jsonStreamToken.setType(PEEKED_NONE);
+                long result = Long.parseLong(jsonStreamTokenHolder.getString());
+                jsonStreamTokenHolder.clear();
                 nestingStack.increaseLastPathIndex();
                 return result;
             } catch (NumberFormatException ignored) {
@@ -931,14 +908,14 @@ public class JsonReader implements Closeable {
             throw new IllegalStateException("Expected a long but was " + peek() + locationString());
         }
 
-        jsonStreamToken.setType(PEEKED_BUFFERED);
-        double asDouble = Double.parseDouble(jsonStreamToken.getString()); // don't catch this NumberFormatException.
+        jsonStreamTokenHolder.setType(PEEKED_BUFFERED);
+        double asDouble = Double.parseDouble(jsonStreamTokenHolder.getString()); // don't catch this NumberFormatException.
         long result = (long) asDouble;
         if (result != asDouble) { // Make sure no precision was lost casting to 'long'.
-            throw new NumberFormatException("Expected a long but was " + jsonStreamToken.getString() + locationString());
+            throw new NumberFormatException("Expected a long but was " + jsonStreamTokenHolder.getString() + locationString());
         }
-        jsonStreamToken.setString(null);
-        jsonStreamToken.setType(PEEKED_NONE);
+        jsonStreamTokenHolder.setString(null);
+        jsonStreamTokenHolder.clear();
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -1132,32 +1109,32 @@ public class JsonReader implements Closeable {
      */
     public int nextInt() throws IOException {
         ensurePicking();
-        int p = jsonStreamToken.getType();
+        int p = jsonStreamTokenHolder.getType();
 
         int result;
         if (p == PEEKED_LONG) {
-            result = (int) jsonStreamToken.getLong();
-            if (jsonStreamToken.getLong() != result) { // Make sure no precision was lost casting to 'int'.
-                throw new NumberFormatException("Expected an int but was " + jsonStreamToken.getLong() + locationString());
+            result = (int) jsonStreamTokenHolder.getLong();
+            if (jsonStreamTokenHolder.getLong() != result) { // Make sure no precision was lost casting to 'int'.
+                throw new NumberFormatException("Expected an int but was " + jsonStreamTokenHolder.getLong() + locationString());
             }
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
             nestingStack.increaseLastPathIndex();
             return result;
         }
 
         if (p == PEEKED_NUMBER) {
-            int peekedNumberLength = jsonStreamToken.getNumberLength();
-            jsonStreamToken.setString(new String(buffer, pos, peekedNumberLength));
+            int peekedNumberLength = jsonStreamTokenHolder.getNumberLength();
+            jsonStreamTokenHolder.setString(new String(buffer, pos, peekedNumberLength));
             pos += peekedNumberLength;
         } else if (p == PEEKED_SINGLE_QUOTED || p == PEEKED_DOUBLE_QUOTED || p == PEEKED_UNQUOTED) {
             if (p == PEEKED_UNQUOTED) {
-                jsonStreamToken.setString(nextUnquotedValue());
+                jsonStreamTokenHolder.setString(nextUnquotedValue());
             } else {
-                jsonStreamToken.setString(nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"'));
+                jsonStreamTokenHolder.setString(nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"'));
             }
             try {
-                result = Integer.parseInt(jsonStreamToken.getString());
-                jsonStreamToken.setType(PEEKED_NONE);
+                result = Integer.parseInt(jsonStreamTokenHolder.getString());
+                jsonStreamTokenHolder.clear();
                 nestingStack.increaseLastPathIndex();
                 return result;
             } catch (NumberFormatException ignored) {
@@ -1167,14 +1144,14 @@ public class JsonReader implements Closeable {
             throw new IllegalStateException("Expected an int but was " + peek() + locationString());
         }
 
-        jsonStreamToken.setType(PEEKED_BUFFERED);
-        double asDouble = Double.parseDouble(jsonStreamToken.getString()); // don't catch this NumberFormatException.
+        jsonStreamTokenHolder.setType(PEEKED_BUFFERED);
+        double asDouble = Double.parseDouble(jsonStreamTokenHolder.getString()); // don't catch this NumberFormatException.
         result = (int) asDouble;
         if (result != asDouble) { // Make sure no precision was lost casting to 'int'.
-            throw new NumberFormatException("Expected an int but was " + jsonStreamToken.getString() + locationString());
+            throw new NumberFormatException("Expected an int but was " + jsonStreamTokenHolder.getString() + locationString());
         }
-        jsonStreamToken.setString(null);
-        jsonStreamToken.setType(PEEKED_NONE);
+        jsonStreamTokenHolder.setString(null);
+        jsonStreamTokenHolder.clear();
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -1184,7 +1161,7 @@ public class JsonReader implements Closeable {
      */
     @Override
     public void close() throws IOException {
-        jsonStreamToken.setType(PEEKED_NONE);
+        jsonStreamTokenHolder.clear();
         nestingStack.close();
         in.close();
     }
@@ -1198,7 +1175,7 @@ public class JsonReader implements Closeable {
         int count = 0;
         do {
             ensurePicking();
-            int p = jsonStreamToken.getType();
+            int p = jsonStreamTokenHolder.getType();
 
             if (p == PEEKED_BEGIN_ARRAY) {
                 push(JsonScope.EMPTY_ARRAY);
@@ -1219,9 +1196,9 @@ public class JsonReader implements Closeable {
             } else if (p == PEEKED_DOUBLE_QUOTED || p == PEEKED_DOUBLE_QUOTED_NAME) {
                 skipQuotedValue('"');
             } else if (p == PEEKED_NUMBER) {
-                pos += jsonStreamToken.getNumberLength();
+                pos += jsonStreamTokenHolder.getNumberLength();
             }
-            jsonStreamToken.setType(PEEKED_NONE);
+            jsonStreamTokenHolder.clear();
         } while (count != 0);
 
         nestingStack.increaseLastPathIndex();
@@ -1598,14 +1575,14 @@ public class JsonReader implements Closeable {
                 }
 
                 reader.ensurePicking();
-                int p = reader.jsonStreamToken.getType();
+                int p = reader.jsonStreamTokenHolder.getType();
 
                 if (p == PEEKED_DOUBLE_QUOTED_NAME) {
-                    reader.jsonStreamToken.setType(PEEKED_DOUBLE_QUOTED);
+                    reader.jsonStreamTokenHolder.setType(PEEKED_DOUBLE_QUOTED);
                 } else if (p == PEEKED_SINGLE_QUOTED_NAME) {
-                    reader.jsonStreamToken.setType(PEEKED_SINGLE_QUOTED);
+                    reader.jsonStreamTokenHolder.setType(PEEKED_SINGLE_QUOTED);
                 } else if (p == PEEKED_UNQUOTED_NAME) {
-                    reader.jsonStreamToken.setType(PEEKED_UNQUOTED);
+                    reader.jsonStreamTokenHolder.setType(PEEKED_UNQUOTED);
                 } else {
                     throw new IllegalStateException(
                             "Expected a name but was " + reader.peek() + reader.locationString());

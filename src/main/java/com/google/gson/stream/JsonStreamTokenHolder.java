@@ -1,6 +1,6 @@
 package com.google.gson.stream;
 
-public class JsonStreamToken {
+public class JsonStreamTokenHolder {
     protected static final int PEEKED_NONE = 0;
     protected static final int PEEKED_BEGIN_OBJECT = 1;
     protected static final int PEEKED_END_OBJECT = 2;
@@ -46,16 +46,26 @@ public class JsonStreamToken {
      */
     private String peekedString;
 
+    public void clear() {
+        type = PEEKED_NONE;
+    }
+
+    public boolean tokenWasPeeked() {
+        boolean tokenWasPeeked = type != PEEKED_NONE;
+
+        return tokenWasPeeked;
+    }
+
     public int getType() {
         return type;
     }
 
     public void setType(int type) {
-        this.type=type;
+        this.type = type;
     }
 
     public boolean hasNext() {
-       return type != PEEKED_END_OBJECT && type != PEEKED_END_ARRAY && type != PEEKED_EOF;
+        return type != PEEKED_END_OBJECT && type != PEEKED_END_ARRAY && type != PEEKED_EOF;
     }
 
     public JsonToken toJsonToken() {
