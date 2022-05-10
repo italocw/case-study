@@ -1,6 +1,6 @@
 package com.google.gson.stream;
 
-public class Peeked {
+public class JsonStreamToken {
     protected static final int PEEKED_NONE = 0;
     protected static final int PEEKED_BEGIN_OBJECT = 1;
     protected static final int PEEKED_END_OBJECT = 2;
