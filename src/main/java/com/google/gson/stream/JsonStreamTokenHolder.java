@@ -23,7 +23,7 @@ public class JsonStreamTokenHolder {
      */
     private String peekedString;
 
-    public void clear() {
+    public void dropToken() {
         scope = PEEKED_NONE;
     }
 

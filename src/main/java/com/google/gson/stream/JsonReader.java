@@ -300,7 +300,7 @@ public class JsonReader implements Closeable {
         if (jsonStreamTokenHolder.getScope() == PEEKED_BEGIN_ARRAY) {
             push(JsonScope.EMPTY_ARRAY);
             nestingStack.moveToNextArrayBegin();
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
         } else {
             throw new IllegalStateException("Expected BEGIN_ARRAY but was " + peek() + locationString());
         }
@@ -315,7 +315,7 @@ public class JsonReader implements Closeable {
 
         if (jsonStreamTokenHolder.getScope() == PEEKED_END_ARRAY) {
             nestingStack.notifyArrayEnd();
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
         } else {
             throw new IllegalStateException("Expected END_ARRAY but was " + peek() + locationString());
         }
@@ -330,7 +330,7 @@ public class JsonReader implements Closeable {
 
         if (jsonStreamTokenHolder.getScope() == PEEKED_BEGIN_OBJECT) {
             push(JsonScope.EMPTY_OBJECT);
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
         } else {
             throw new IllegalStateException("Expected BEGIN_OBJECT but was " + peek() + locationString());
         }
@@ -345,7 +345,7 @@ public class JsonReader implements Closeable {
 
         if (jsonStreamTokenHolder.getScope() == PEEKED_END_OBJECT) {
             nestingStack.notifyObjectEnd();
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
         } else {
             throw new IllegalStateException("Expected END_OBJECT but was " + peek() + locationString());
         }
@@ -738,7 +738,7 @@ public class JsonReader implements Closeable {
         } else {
             throw new IllegalStateException("Expected a name but was " + peek() + locationString());
         }
-        jsonStreamTokenHolder.clear();
+        jsonStreamTokenHolder.dropToken();
         nestingStack.setLastPathName(result);
         return result;
     }
@@ -774,7 +774,7 @@ public class JsonReader implements Closeable {
         } else {
             throw new IllegalStateException("Expected a string but was " + peek() + locationString());
         }
-        jsonStreamTokenHolder.clear();
+        jsonStreamTokenHolder.dropToken();
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -791,11 +791,11 @@ public class JsonReader implements Closeable {
         JsonStreamTokenScope jsonStreamTokenScope = jsonStreamTokenHolder.getScope();
 
         if (jsonStreamTokenScope == PEEKED_TRUE) {
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
             nestingStack.increaseLastPathIndex();
             return true;
         } else if (jsonStreamTokenScope == PEEKED_FALSE) {
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
             nestingStack.increaseLastPathIndex();
             return false;
         }
@@ -814,7 +814,7 @@ public class JsonReader implements Closeable {
         JsonStreamTokenScope jsonStreamTokenHolderScope = jsonStreamTokenHolder.getScope();
 
         if (jsonStreamTokenHolderScope == PEEKED_NULL) {
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
             nestingStack.increaseLastPathIndex();
         } else {
             throw new IllegalStateException("Expected null but was " + peek() + locationString());
@@ -835,7 +835,7 @@ public class JsonReader implements Closeable {
         JsonStreamTokenScope jsonStreamTokenScope = jsonStreamTokenHolder.getScope();
 
         if (jsonStreamTokenScope == PEEKED_LONG) {
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
             nestingStack.increaseLastPathIndex();
             return (double) jsonStreamTokenHolder.getLong();
         }
@@ -858,7 +858,7 @@ public class JsonReader implements Closeable {
                     "JSON forbids NaN and infinities: " + result + locationString());
         }
         jsonStreamTokenHolder.setString(null);
-        jsonStreamTokenHolder.clear();
+        jsonStreamTokenHolder.dropToken();
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -878,7 +878,7 @@ public class JsonReader implements Closeable {
         JsonStreamTokenScope jsonStreamTokenScope = jsonStreamTokenHolder.getScope();
 
         if (jsonStreamTokenScope == PEEKED_LONG) {
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
             nestingStack.increaseLastPathIndex();
             return jsonStreamTokenHolder.getLong();
         }
@@ -896,7 +896,7 @@ public class JsonReader implements Closeable {
             }
             try {
                 long result = Long.parseLong(jsonStreamTokenHolder.getString());
-                jsonStreamTokenHolder.clear();
+                jsonStreamTokenHolder.dropToken();
                 nestingStack.increaseLastPathIndex();
                 return result;
             } catch (NumberFormatException ignored) {
@@ -913,7 +913,7 @@ public class JsonReader implements Closeable {
             throw new NumberFormatException("Expected a long but was " + jsonStreamTokenHolder.getString() + locationString());
         }
         jsonStreamTokenHolder.setString(null);
-        jsonStreamTokenHolder.clear();
+        jsonStreamTokenHolder.dropToken();
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -1115,7 +1115,7 @@ public class JsonReader implements Closeable {
             if (jsonStreamTokenHolder.getLong() != result) { // Make sure no precision was lost casting to 'int'.
                 throw new NumberFormatException("Expected an int but was " + jsonStreamTokenHolder.getLong() + locationString());
             }
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
             nestingStack.increaseLastPathIndex();
             return result;
         }
@@ -1132,7 +1132,7 @@ public class JsonReader implements Closeable {
             }
             try {
                 result = Integer.parseInt(jsonStreamTokenHolder.getString());
-                jsonStreamTokenHolder.clear();
+                jsonStreamTokenHolder.dropToken();
                 nestingStack.increaseLastPathIndex();
                 return result;
             } catch (NumberFormatException ignored) {
@@ -1149,7 +1149,7 @@ public class JsonReader implements Closeable {
             throw new NumberFormatException("Expected an int but was " + jsonStreamTokenHolder.getString() + locationString());
         }
         jsonStreamTokenHolder.setString(null);
-        jsonStreamTokenHolder.clear();
+        jsonStreamTokenHolder.dropToken();
         nestingStack.increaseLastPathIndex();
         return result;
     }
@@ -1159,7 +1159,7 @@ public class JsonReader implements Closeable {
      */
     @Override
     public void close() throws IOException {
-        jsonStreamTokenHolder.clear();
+        jsonStreamTokenHolder.dropToken();
         nestingStack.close();
         in.close();
     }
@@ -1196,7 +1196,7 @@ public class JsonReader implements Closeable {
             } else if (jsonStreamTokenScope == PEEKED_NUMBER) {
                 pos += jsonStreamTokenHolder.getNumberLength();
             }
-            jsonStreamTokenHolder.clear();
+            jsonStreamTokenHolder.dropToken();
         } while (count != 0);
 
         nestingStack.increaseLastPathIndex();
