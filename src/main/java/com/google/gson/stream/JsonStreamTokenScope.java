@@ -26,37 +26,48 @@ public enum JsonStreamTokenScope {
     }
 
     public JsonToken toJsonToken() {
-        switch (this) {
-            case PEEKED_BEGIN_OBJECT:
-                return JsonToken.BEGIN_OBJECT;
-            case PEEKED_END_OBJECT:
-                return JsonToken.END_OBJECT;
-            case PEEKED_BEGIN_ARRAY:
-                return JsonToken.BEGIN_ARRAY;
-            case PEEKED_END_ARRAY:
-                return JsonToken.END_ARRAY;
-            case PEEKED_SINGLE_QUOTED_NAME:
-            case PEEKED_DOUBLE_QUOTED_NAME:
-            case PEEKED_UNQUOTED_NAME:
-                return JsonToken.NAME;
-            case PEEKED_TRUE:
-            case PEEKED_FALSE:
-                return JsonToken.BOOLEAN;
-            case PEEKED_NULL:
-                return JsonToken.NULL;
-            case PEEKED_SINGLE_QUOTED:
-            case PEEKED_DOUBLE_QUOTED:
-            case PEEKED_UNQUOTED:
-            case PEEKED_BUFFERED:
-                return JsonToken.STRING;
-            case PEEKED_LONG:
-            case PEEKED_NUMBER:
-                return JsonToken.NUMBER;
-            case PEEKED_EOF:
-                return JsonToken.END_DOCUMENT;
-            default:
-                throw new AssertionError();
+        JsonToken jsonToken;
+
+        if (equals(PEEKED_BEGIN_OBJECT)) {
+            jsonToken = JsonToken.BEGIN_OBJECT;
+        } else if (equals(PEEKED_END_OBJECT)) {
+            jsonToken = JsonToken.END_OBJECT;
+        } else if (equals(PEEKED_BEGIN_ARRAY)) {
+            jsonToken = JsonToken.BEGIN_ARRAY;
+        } else if (equals(PEEKED_END_ARRAY)) {
+            jsonToken = JsonToken.END_ARRAY;
+        } else if (isAName()) {
+            jsonToken = JsonToken.NAME;
+        } else if (isABoolean()) {
+            jsonToken = JsonToken.BOOLEAN;
+        } else if (equals(PEEKED_NULL)) {
+            jsonToken = JsonToken.NULL;
+        } else if (isAString()) {
+            jsonToken = JsonToken.STRING;
+        } else if (isANumber()) {
+            jsonToken = JsonToken.NUMBER;
+        } else if (equals(PEEKED_EOF)) {
+            jsonToken = JsonToken.END_DOCUMENT;
+        } else {
+            throw new AssertionError();
         }
+
+        return jsonToken;
     }
 
+    private boolean isANumber() {
+        return equals(PEEKED_LONG) || equals(PEEKED_NUMBER);
+    }
+
+    private boolean isAString() {
+        return equals(PEEKED_SINGLE_QUOTED) || equals(PEEKED_DOUBLE_QUOTED) || equals(PEEKED_UNQUOTED) || equals(PEEKED_BUFFERED);
+    }
+
+    private boolean isABoolean() {
+        return equals(PEEKED_TRUE) || equals(PEEKED_FALSE);
+    }
+
+    private boolean isAName() {
+        return equals(PEEKED_SINGLE_QUOTED_NAME) || equals(PEEKED_DOUBLE_QUOTED_NAME) || equals(PEEKED_UNQUOTED_NAME);
+    }
 }

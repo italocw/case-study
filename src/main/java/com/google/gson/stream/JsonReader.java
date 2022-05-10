@@ -235,7 +235,6 @@ public class JsonReader implements Closeable {
 
     private Stack nestingStack = new Stack();
 
-
     /**
      * Creates a new instance that reads a JSON-encoded stream from {@code in}.
      */
@@ -368,7 +367,6 @@ public class JsonReader implements Closeable {
         return jsonStreamTokenHolder.getScope().toJsonToken();
     }
 
-
     private void doPeek() throws IOException {
         int jsonScope = nestingStack.getCurrentScope();
         if (jsonScope == JsonScope.EMPTY_ARRAY) {
@@ -417,11 +415,11 @@ public class JsonReader implements Closeable {
         }
     }
 
-    private void tryPeekTokenForSomethingEmptyScope(int peekStack) throws IOException {
-        int c = nextNonWhitespace(true);
-        switch (c) {
+    private void tryPeekTokenForSomethingEmptyScope(int jsonScope) throws IOException {
+        int character = nextNonWhitespace(true);
+        switch (character) {
             case ']':
-                if (peekStack == JsonScope.EMPTY_ARRAY) {
+                if (jsonScope == JsonScope.EMPTY_ARRAY) {
                     jsonStreamTokenHolder.setScope(PEEKED_END_ARRAY);
                     break;
                 }
@@ -429,7 +427,7 @@ public class JsonReader implements Closeable {
             case ';':
             case ',':
                 // In lenient mode, a 0-length literal in an array means 'null'.
-                if (peekStack == JsonScope.EMPTY_ARRAY || peekStack == JsonScope.NONEMPTY_ARRAY) {
+                if (jsonScope == JsonScope.EMPTY_ARRAY || jsonScope == JsonScope.NONEMPTY_ARRAY) {
                     checkLenient();
                     pos--;
                     jsonStreamTokenHolder.setScope(PEEKED_NULL);
