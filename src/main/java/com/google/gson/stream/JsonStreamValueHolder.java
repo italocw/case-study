@@ -34,14 +34,14 @@ public class JsonStreamValueHolder {
     public JsonStreamValueScope getScope() {
         return scope;
     }
+
     public void setScope(JsonStreamValueScope scope) {
         this.scope = scope;
     }
 
     public boolean hasNext() {
-        return scope.hasNextToken();
+        return scope != PEEKED_END_OBJECT && scope != PEEKED_END_ARRAY && scope != PEEKED_EOF;
     }
-
 
     public void setLong(boolean negative, long value) {
         peekedLong = negative ? value : -value;

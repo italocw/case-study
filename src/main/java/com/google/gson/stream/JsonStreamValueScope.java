@@ -20,11 +20,6 @@ public enum JsonStreamValueScope {
     PEEKED_NUMBER,
     PEEKED_EOF;
 
-    public boolean hasNextToken() {
-        boolean hasNextToken = this != PEEKED_END_OBJECT && this != PEEKED_END_ARRAY && this != PEEKED_EOF;
-        return hasNextToken;
-    }
-
     public JsonToken toJsonToken() {
         JsonToken jsonToken;
 
