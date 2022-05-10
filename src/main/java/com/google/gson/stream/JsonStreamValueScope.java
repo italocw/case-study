@@ -1,6 +1,6 @@
 package com.google.gson.stream;
 
-public enum JsonStreamTokenScope {
+public enum JsonStreamValueScope {
     PEEKED_NONE,
     PEEKED_BEGIN_OBJECT,
     PEEKED_END_OBJECT,

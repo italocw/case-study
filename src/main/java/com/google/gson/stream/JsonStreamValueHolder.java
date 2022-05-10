@@ -1,9 +1,9 @@
 package com.google.gson.stream;
 
-import static com.google.gson.stream.JsonStreamTokenScope.*;
+import static com.google.gson.stream.JsonStreamValueScope.*;
 
-public class JsonStreamTokenHolder {
-    private JsonStreamTokenScope scope = PEEKED_NONE;
+public class JsonStreamValueHolder {
+    private JsonStreamValueScope scope = PEEKED_NONE;
     /**
      * A peeked value that was composed entirely of digits with an optional
      * leading dash. Positive values may not have a leading 0.
@@ -31,10 +31,10 @@ public class JsonStreamTokenHolder {
         return scope == PEEKED_NONE;
     }
 
-    public JsonStreamTokenScope getScope() {
+    public JsonStreamValueScope getScope() {
         return scope;
     }
-    public void setScope(JsonStreamTokenScope scope) {
+    public void setScope(JsonStreamValueScope scope) {
         this.scope = scope;
     }
 
