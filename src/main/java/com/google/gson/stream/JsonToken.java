@@ -81,5 +81,5 @@ public enum JsonToken {
    * JsonReader#peek()} to signal that the JSON-encoded value has no more
    * tokens.
    */
-  END_DOCUMENT
+  END_DOCUMENT;
 }

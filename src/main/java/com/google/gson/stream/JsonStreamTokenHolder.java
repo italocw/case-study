@@ -1,32 +1,9 @@
 package com.google.gson.stream;
 
-public class JsonStreamTokenHolder {
-    protected static final int PEEKED_NONE = 0;
-    protected static final int PEEKED_BEGIN_OBJECT = 1;
-    protected static final int PEEKED_END_OBJECT = 2;
-    protected static final int PEEKED_BEGIN_ARRAY = 3;
-    protected static final int PEEKED_END_ARRAY = 4;
-    protected static final int PEEKED_TRUE = 5;
-    protected static final int PEEKED_FALSE = 6;
-    protected static final int PEEKED_NULL = 7;
-    protected static final int PEEKED_SINGLE_QUOTED = 8;
-    protected static final int PEEKED_DOUBLE_QUOTED = 9;
-    protected static final int PEEKED_UNQUOTED = 10;
-    /**
-     * When this is returned, the string value is stored in peekedString.
-     */
-    protected static final int PEEKED_BUFFERED = 11;
-    protected static final int PEEKED_SINGLE_QUOTED_NAME = 12;
-    protected static final int PEEKED_DOUBLE_QUOTED_NAME = 13;
-    protected static final int PEEKED_UNQUOTED_NAME = 14;
-    /**
-     * When this is returned, the integer value is stored in peekedLong.
-     */
-    protected static final int PEEKED_LONG = 15;
-    protected static final int PEEKED_NUMBER = 16;
-    protected static final int PEEKED_EOF = 17;
+import static com.google.gson.stream.JsonStreamTokenScope.*;
 
-    private int type = PEEKED_NONE;
+public class JsonStreamTokenHolder {
+    private JsonStreamTokenScope scope = PEEKED_NONE;
     /**
      * A peeked value that was composed entirely of digits with an optional
      * leading dash. Positive values may not have a leading 0.
@@ -47,70 +24,35 @@ public class JsonStreamTokenHolder {
     private String peekedString;
 
     public void clear() {
-        type = PEEKED_NONE;
+        scope = PEEKED_NONE;
     }
 
     public boolean tokenWasPeeked() {
-        boolean tokenWasPeeked = type != PEEKED_NONE;
+        boolean tokenWasPeeked = scope != PEEKED_NONE;
 
         return tokenWasPeeked;
     }
 
-    public int getType() {
-        return type;
+    public JsonStreamTokenScope getScope() {
+        return scope;
     }
-
-    public void setType(int type) {
-        this.type = type;
+    public void setScope(JsonStreamTokenScope scope) {
+        this.scope = scope;
     }
 
     public boolean hasNext() {
-        return type != PEEKED_END_OBJECT && type != PEEKED_END_ARRAY && type != PEEKED_EOF;
+        return scope.hasNextToken();
     }
 
-    public JsonToken toJsonToken() {
-        switch (type) {
-            case PEEKED_BEGIN_OBJECT:
-                return JsonToken.BEGIN_OBJECT;
-            case PEEKED_END_OBJECT:
-                return JsonToken.END_OBJECT;
-            case PEEKED_BEGIN_ARRAY:
-                return JsonToken.BEGIN_ARRAY;
-            case PEEKED_END_ARRAY:
-                return JsonToken.END_ARRAY;
-            case PEEKED_SINGLE_QUOTED_NAME:
-            case PEEKED_DOUBLE_QUOTED_NAME:
-            case PEEKED_UNQUOTED_NAME:
-                return JsonToken.NAME;
-            case PEEKED_TRUE:
-            case PEEKED_FALSE:
-                return JsonToken.BOOLEAN;
-            case PEEKED_NULL:
-                return JsonToken.NULL;
-            case PEEKED_SINGLE_QUOTED:
-            case PEEKED_DOUBLE_QUOTED:
-            case PEEKED_UNQUOTED:
-            case PEEKED_BUFFERED:
-                return JsonToken.STRING;
-            case PEEKED_LONG:
-            case PEEKED_NUMBER:
-                return JsonToken.NUMBER;
-            case PEEKED_EOF:
-                return JsonToken.END_DOCUMENT;
-            default:
-                throw new AssertionError();
-        }
-    }
 
     public void setLong(boolean negative, long value) {
         peekedLong = negative ? value : -value;
-        type = PEEKED_LONG;
+        scope = PEEKED_LONG;
     }
 
     public void setNumber(int length) {
         peekedNumberLength = length;
-        type = PEEKED_NUMBER;
-
+        scope = PEEKED_NUMBER;
     }
 
     public long getLong() {
