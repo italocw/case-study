@@ -372,37 +372,37 @@ public class JsonReader implements Closeable {
 
     void doPeek() throws IOException {
         boolean tokenWasPeeked = false;
-        int peekStack = nestingStack.getCurrentScope();
-        if (peekStack == JsonScope.EMPTY_ARRAY) {
+        int jsonScope = nestingStack.getCurrentScope();
+        if (jsonScope == JsonScope.EMPTY_ARRAY) {
             nestingStack.setCurrentScope(JsonScope.NONEMPTY_ARRAY);
-        } else if (peekStack == JsonScope.NONEMPTY_ARRAY) {
-            tokenWasPeeked = tryPeekTokenWhenNonEmptyArray();
-        } else if (peekStack == JsonScope.EMPTY_OBJECT || peekStack == JsonScope.NONEMPTY_OBJECT) {
+        } else if (jsonScope == JsonScope.NONEMPTY_ARRAY) {
+            tokenWasPeeked = tryPeekTokenForNonEmptyArrayScope();
+        } else if (jsonScope == JsonScope.EMPTY_OBJECT || jsonScope == JsonScope.NONEMPTY_OBJECT) {
             nestingStack.setCurrentScope(JsonScope.DANGLING_NAME);
-            if (peekStack == JsonScope.NONEMPTY_OBJECT) {
-                tokenWasPeeked = tryPeekTokenWhenNonEmptyObject();
+            if (jsonScope == JsonScope.NONEMPTY_OBJECT) {
+                tokenWasPeeked = tryPeekTokenForNonEmptyObjectScope();
             }
             if (!tokenWasPeeked) {
-                peekTokenWhenObject(peekStack);
+                peekTokenWhenObject(jsonScope);
                 tokenWasPeeked = true;
             }
 
-        } else if (peekStack == JsonScope.DANGLING_NAME) {
+        } else if (jsonScope == JsonScope.DANGLING_NAME) {
             nestingStack.setCurrentScope(JsonScope.NONEMPTY_OBJECT);
             // Look for a colon before the value.
             lookForColonBeforeValue();
-        } else if (peekStack == JsonScope.EMPTY_DOCUMENT) {
+        } else if (jsonScope == JsonScope.EMPTY_DOCUMENT) {
             if (lenient) {
                 consumeNonExecutePrefix();
             }
             nestingStack.setCurrentScope(JsonScope.NONEMPTY_DOCUMENT);
-        } else if (peekStack == JsonScope.NONEMPTY_DOCUMENT) {
-            tokenWasPeeked = tryPeekTokenWhenNonEmptyDocument();
-        } else if (peekStack == JsonScope.CLOSED) {
+        } else if (jsonScope == JsonScope.NONEMPTY_DOCUMENT) {
+            tokenWasPeeked = tryPeekTokenForNonEmptyDocumentScope();
+        } else if (jsonScope == JsonScope.CLOSED) {
             throw new IllegalStateException("JsonReader is closed");
         }
         if (!tokenWasPeeked) {
-            tokenWasPeeked = tryPeekTokenWhenIsSomethingEmpty(peekStack);
+            tokenWasPeeked = tryPeekTokenForSomethingEmptyScope(jsonScope);
 
             if (!tokenWasPeeked) {
                 peeked.setType(peekKeyword());
@@ -423,7 +423,7 @@ public class JsonReader implements Closeable {
         }
     }
 
-    private boolean tryPeekTokenWhenIsSomethingEmpty(int peekStack) throws IOException {
+    private boolean tryPeekTokenForSomethingEmptyScope(int peekStack) throws IOException {
         boolean tokenWasPeeked = false;
         int c = nextNonWhitespace(true);
         switch (c) {
@@ -469,7 +469,7 @@ public class JsonReader implements Closeable {
         return tokenWasPeeked;
     }
 
-    private boolean tryPeekTokenWhenNonEmptyDocument() throws IOException {
+    private boolean tryPeekTokenForNonEmptyDocumentScope() throws IOException {
         boolean tokenWasPeeked = false;
         int character = nextNonWhitespace(false);
         if (character == -1) {
@@ -530,7 +530,7 @@ public class JsonReader implements Closeable {
 
     }
 
-    private boolean tryPeekTokenWhenNonEmptyObject() throws IOException {
+    private boolean tryPeekTokenForNonEmptyObjectScope() throws IOException {
         boolean tokenWasPeeked = false;
         // Look for a comma before the next element.
         int character = nextNonWhitespace(true);
@@ -550,7 +550,7 @@ public class JsonReader implements Closeable {
     }
 
 
-    private boolean tryPeekTokenWhenNonEmptyArray() throws IOException {
+    private boolean tryPeekTokenForNonEmptyArrayScope() throws IOException {
         // Look for a comma before the next element.
         boolean tokenWasPeeked = false;
         int character = nextNonWhitespace(true);
