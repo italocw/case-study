@@ -402,7 +402,7 @@ public class JsonReader implements Closeable {
             throw new IllegalStateException("JsonReader is closed");
         }
         if (!tokenWasPeeked) {
-            tokenWasPeeked = tryPeekToken(peekStack);
+            tokenWasPeeked = tryPeekTokenWhenIsSomethingEmpty(peekStack);
 
             if (!tokenWasPeeked) {
                 peeked.setType(peekKeyword());
@@ -423,7 +423,7 @@ public class JsonReader implements Closeable {
         }
     }
 
-    private boolean tryPeekToken(int peekStack) throws IOException {
+    private boolean tryPeekTokenWhenIsSomethingEmpty(int peekStack) throws IOException {
         boolean tokenWasPeeked = false;
         int c = nextNonWhitespace(true);
         switch (c) {
