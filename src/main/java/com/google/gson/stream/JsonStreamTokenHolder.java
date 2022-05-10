@@ -27,10 +27,8 @@ public class JsonStreamTokenHolder {
         scope = PEEKED_NONE;
     }
 
-    public boolean tokenWasPeeked() {
-        boolean tokenWasPeeked = scope != PEEKED_NONE;
-
-        return tokenWasPeeked;
+    public boolean hasNone() {
+        return scope == PEEKED_NONE;
     }
 
     public JsonStreamTokenScope getScope() {

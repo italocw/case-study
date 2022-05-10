@@ -286,7 +286,7 @@ public class JsonReader implements Closeable {
     }
 
     private void ensurePicking() throws IOException {
-        if (!jsonStreamTokenHolder.tokenWasPeeked()) {
+        if (jsonStreamTokenHolder.hasNone()) {
             doPeek();
         }
     }
@@ -378,7 +378,7 @@ public class JsonReader implements Closeable {
             if (jsonScope == JsonScope.NONEMPTY_OBJECT) {
                 tryPeekTokenForNonEmptyObjectScope();
             }
-            if (!jsonStreamTokenHolder.tokenWasPeeked()) {
+            if (jsonStreamTokenHolder.hasNone()) {
                 peekTokenWhenObject(jsonScope);
             }
 
@@ -396,15 +396,15 @@ public class JsonReader implements Closeable {
         } else if (jsonScope == JsonScope.CLOSED) {
             throw new IllegalStateException("JsonReader is closed");
         }
-        if (!jsonStreamTokenHolder.tokenWasPeeked()) {
+        if (jsonStreamTokenHolder.hasNone()) {
             tryPeekTokenForSomethingEmptyScope(jsonScope);
-            if (!jsonStreamTokenHolder.tokenWasPeeked()) {
+            if (jsonStreamTokenHolder.hasNone()) {
                 jsonStreamTokenHolder.setScope(peekKeyword());
             }
-            if (!jsonStreamTokenHolder.tokenWasPeeked()) {
+            if (jsonStreamTokenHolder.hasNone()) {
                 jsonStreamTokenHolder.setScope(peekNumber());
 
-                if (!jsonStreamTokenHolder.tokenWasPeeked()) {
+                if (jsonStreamTokenHolder.hasNone()) {
                     if (!isLiteral(buffer[pos])) {
                         throw syntaxError("Expected value");
                     }
